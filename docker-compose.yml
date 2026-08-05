@@ -1,0 +1,23 @@
+# NetControl — Jalon 1 : application en mode simulation.
+# Jalon 2 : ajout des services zabbix-server, postgres et vector (collecte syslog).
+services:
+  backend:
+    build: ./backend
+    environment:
+      NETCONTROL_MODE: simulation
+    volumes:
+      - netcontrol-data:/srv/netcontrol/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  netcontrol-data:
