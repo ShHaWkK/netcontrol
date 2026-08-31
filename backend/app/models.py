@@ -66,6 +66,10 @@ class Switch(BaseModel):
     loc: str
     ports: list[Port]
     sfp: list[SfpPort]
+    live: bool = False  # True = données lues en direct sur le switch réel (Netmiko)
+    cpu_pct: Optional[int] = None
+    temp_c: Optional[int] = None
+    uptime: Optional[str] = None
 
 
 class Alert(BaseModel):
@@ -131,11 +135,14 @@ class Snapshot(BaseModel):
     operator: str
     kpis: Kpis
     aps: list[Ap]
+    aps_live: bool = False  # True = AP/heatmap lus en direct depuis un WLC (pas encore implémenté)
     rooms: list[Room]
     devices: list[Device]
     wan: list[WanLink]
+    wan_live: bool = False  # True = latence WAN mesurée réellement (pas encore implémenté)
     switches: list[Switch]
     alerts: list[Alert]
+    alerts_live: bool = False  # True = alertes lues en direct depuis Zabbix
     logs: list[LogEntry]
     ssid_history: SsidHistory
 

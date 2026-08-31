@@ -1,10 +1,12 @@
-# NetControl — Jalon 1 : application en mode simulation.
-# Jalon 2 : ajout des services zabbix-server, postgres et vector (collecte syslog).
+# NetControl — bascule automatiquement entre simulation et sources réelles
+# (switch Netmiko, Zabbix) selon ce qui est renseigné dans backend/.env.
+# Sans ce fichier (ou vide), l'app tourne en 100% simulation, comme avant.
 services:
   backend:
     build: ./backend
-    environment:
-      NETCONTROL_MODE: simulation
+    env_file:
+      - path: ./backend/.env
+        required: false
     volumes:
       - netcontrol-data:/srv/netcontrol/data
     ports:

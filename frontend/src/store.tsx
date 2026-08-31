@@ -6,18 +6,20 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Snapshot } from './types'
+import type { Meta, Snapshot } from './types'
 
 interface Store {
   snap: Snapshot | null
   connected: boolean
+  meta: Meta | null
 }
 
-const StoreContext = createContext<Store>({ snap: null, connected: false })
+const StoreContext = createContext<Store>({ snap: null, connected: false, meta: null })
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [connected, setConnected] = useState(false)
+  const [meta, setMeta] = useState<Meta | null>(null)
   const retryRef = useRef(0)
 
   useEffect(() => {
@@ -51,6 +53,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((s) => s && setSnap((prev) => prev ?? s))
       .catch(() => {})
+    fetch('/api/meta')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m) => m && setMeta(m))
+      .catch(() => {})
 
     return () => {
       closed = true
@@ -60,7 +66,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <StoreContext.Provider value={{ snap, connected }}>
+    <StoreContext.Provider value={{ snap, connected, meta }}>
       {children}
     </StoreContext.Provider>
   )

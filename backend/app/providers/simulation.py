@@ -482,6 +482,9 @@ class SimulationProvider(DataProvider):
                 break
         return out
 
+    def get_vlans(self) -> list[Vlan]:
+        return VLANS
+
     # ── Switch Manager ───────────────────────────────────────────────
     def _find_port(self, switch_name: str, port_n: int) -> tuple[Switch, Port]:
         sw = next((s for s in self.switches if s.name == switch_name), None)

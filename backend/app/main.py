@@ -7,9 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .models import PortConfigRequest, PositionUpdate
-from .providers.simulation import PROFILES, VLANS, SimulationProvider
+from .providers.hybrid import HybridProvider
+from .providers.simulation import PROFILES
 
-provider = SimulationProvider()
+# HybridProvider bascule automatiquement : switch(s) réel(s) via Netmiko
+# si backend/.env en configure au moins un et qu'il répond au démarrage,
+# sinon comportement 100% simulé inchangé (aucune config = rien ne change).
+provider = HybridProvider()
 
 app = FastAPI(
     title="NetControl API",
@@ -87,7 +91,11 @@ def get_meta():
         "site_name": settings.site_name,
         "site_location": settings.site_location,
         "operator": settings.operator,
-        "vlans": VLANS,
+        "vlans": provider.get_vlans(),
+        # Les profils rapides ("Access point", "Printer"...) restent ceux de
+        # la démo simulée : leur mapping VLAN est propre au scénario Dakar et
+        # n'a pas de sens sur un switch réel arbitraire — le frontend les
+        # masque quand le switch sélectionné est live.
         "profiles": PROFILES,
     }
 
@@ -126,16 +134,26 @@ def preview_port(switch_name: str, port_n: int, req: PortConfigRequest):
         raise HTTPException(404, f"Unknown port: {switch_name} #{port_n}")
     except PermissionError as e:
         raise HTTPException(403, f"Port is protected (read-only): {e}")
+    except Exception as e:  # noqa: BLE001 — ex. switch réel injoignable pour la preview
+        raise HTTPException(502, f"Switch error: {e}")
 
 
 @app.post("/api/switches/{switch_name}/ports/{port_n}/apply")
 async def apply_port(switch_name: str, port_n: int, req: PortConfigRequest):
     try:
-        result = provider.apply_port_config(switch_name, port_n, req)
+        # apply_port_config peut faire une vraie session SSH bloquante
+        # (Netmiko) — on la sort du event loop pour ne pas geler le serveur
+        # (WebSocket, autres requêtes) pendant les quelques secondes que ça prend.
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, provider.apply_port_config, switch_name, port_n, req
+        )
     except KeyError:
         raise HTTPException(404, f"Unknown port: {switch_name} #{port_n}")
     except PermissionError as e:
         raise HTTPException(403, f"Port is protected (read-only): {e}")
+    except Exception as e:  # noqa: BLE001 — ex. timeout SSH, auth refusée, config rejetée
+        raise HTTPException(502, f"Push to switch failed, nothing applied: {e}")
     await manager.broadcast_snapshot()
     return result
 

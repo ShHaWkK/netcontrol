@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { useSnapshot } from '../store'
+import { consumePendingSelection } from '../nav'
+import { useSnapshot, useStore } from '../store'
 import { showToast } from '../toast'
 import type { CliPreview, Port, PortConfigRequest, SfpPort, Switch } from '../types'
-import { PROFILES, VLANS } from '../types'
+import { PROFILES as SIM_PROFILES, VLANS as SIM_VLANS } from '../types'
 import { minutesAgo } from '../utils'
 
 interface Selection {
@@ -19,14 +20,31 @@ function cliLineClass(line: string): string | undefined {
 
 export default function SwitchManager() {
   const snap = useSnapshot()
+  const { meta } = useStore()
   const [sel, setSel] = useState<Selection | null>(null)
   const [vlan, setVlan] = useState<number>(10)
   const [desc, setDesc] = useState('')
   const [preview, setPreview] = useState<{ cli: CliPreview; req: PortConfigRequest } | null>(null)
+  const [applying, setApplying] = useState(false)
+
+  // arrivée depuis "Fix in Switch Manager" sur la Heatmap : pré-sélectionne
+  // le port concerné dès le montage, pour résoudre l'incident en un clic.
+  useEffect(() => {
+    const pending = consumePendingSelection()
+    if (pending) setSel(pending)
+  }, [])
 
   const sw = sel ? snap.switches.find((s) => s.name === sel.swName) : null
   const port: Port | null = sel && sw && sel.n > 0 ? sw.ports[sel.n - 1] : null
   const sfp: SfpPort | null = sel && sw && sel.n < 0 ? sw.sfp[-sel.n - 1] : null
+  // /api/meta reflète le(s) switch(s) live — mais un switch simulé (ex. la
+  // démo SW-EDGE-01) doit garder SES propres VLANs, pas ceux d'un vrai
+  // switch sans rapport connecté à côté. On ne prend les VLANs réels que
+  // pour un switch effectivement live.
+  const VLANS = sw?.live ? (meta?.vlans ?? SIM_VLANS) : SIM_VLANS
+  // Les profils rapides (mapping VLAN "Access point"/"Printer"...) sont
+  // propres au scénario Dakar simulé : sans objet sur un switch réel arbitraire.
+  const PROFILES = sw?.live ? [] : (meta?.profiles ?? SIM_PROFILES)
 
   // resynchronise le formulaire quand on change de port
   useEffect(() => {
@@ -43,18 +61,30 @@ export default function SwitchManager() {
     api
       .previewPort(sw.name, sel.n, req)
       .then((cli) => setPreview({ cli, req }))
-      .catch((e) => showToast('Error', e.message))
+      .catch((e) => showToast('Preview failed', e.message, 'error'))
   }
 
   const apply = () => {
     if (!sel || !sw || !preview) return
+    setApplying(true)
     api
       .applyPort(sw.name, sel.n, preview.req)
       .then((cli) => {
-        showToast('Configuration applied', `${cli.summary} — ${sw.name}`)
+        showToast(
+          sw.live ? 'Pushed to the real switch' : 'Configuration applied (simulation)',
+          `${cli.summary} — ${sw.name}`,
+          'success',
+        )
         setPreview(null)
       })
-      .catch((e) => showToast('Error', e.message))
+      .catch((e) =>
+        showToast(
+          sw.live ? 'Push to the switch failed — nothing changed' : 'Apply failed',
+          e.message,
+          'error',
+        ),
+      )
+      .finally(() => setApplying(false))
   }
 
   // la modale se ferme à Échap, comme attendu d'un dialogue
@@ -91,6 +121,7 @@ export default function SwitchManager() {
       <div className="fp-inner" style={si ? { marginTop: 20 } : undefined} key={s.name}>
         <div className="fp-title">
           <b>{s.name}</b>
+          {s.live && <span className="pill live">● LIVE</span>}
           <span className="sub">{s.model} · {s.ip} · {s.loc}</span>
           <span className="pill ok" style={{ marginLeft: 'auto' }}>● {up} ports up</span>
           <span className="pill mute">PoE {poe} W / 720 W</span>
@@ -187,7 +218,7 @@ export default function SwitchManager() {
                   <span className="l">Description</span>
                   <span className="v">{port.desc || '—'}</span>
                   <span className="l">VLAN</span>
-                  <span className="v">{vlanLabel(port.vlan)}</span>
+                  <span className="v">{vlanLabel(VLANS, port.vlan)}</span>
                 </div>
                 <ProtectedNote />
               </>
@@ -205,9 +236,11 @@ export default function SwitchManager() {
                   <span className="l">Errors (in/out)</span>
                   <span className="v">{port.err || 0}</span>
                   <span className="l">Last change</span>
-                  <span className="v">{minutesAgo(12 + port.n)}</span>
+                  <span className="v">{sw.live ? '—' : minutesAgo(12 + port.n)}</span>
                   <span className="l">Traffic</span>
-                  <span className="v">{port.state === 'up' ? `${2 + (port.n % 9)}.${port.n % 10} Mb/s` : '—'}</span>
+                  <span className="v">
+                    {sw.live ? '—' : port.state === 'up' ? `${2 + (port.n % 9)}.${port.n % 10} Mb/s` : '—'}
+                  </span>
                 </div>
                 <div className="field">
                   <label htmlFor="fVlan">Access VLAN</label>
@@ -227,6 +260,7 @@ export default function SwitchManager() {
                     onChange={(e) => setDesc(e.target.value)}
                   />
                 </div>
+                {PROFILES.length > 0 && (
                 <div className="field">
                   <label>Quick profiles</label>
                   <div className="profiles">
@@ -235,6 +269,7 @@ export default function SwitchManager() {
                     ))}
                   </div>
                 </div>
+                )}
                 <div className="btn-row">
                   <button className="btn" onClick={() => openPreview('poe')}>↻ Restart PoE</button>
                   <button className="btn" onClick={() => openPreview(port.state === 'down' ? 'noshut' : 'shut')}>
@@ -276,9 +311,11 @@ export default function SwitchManager() {
               </pre>
             </div>
             <div className="modal-foot">
-              <button className="btn ghost" onClick={() => setPreview(null)}>Cancel</button>
-              <button className="btn primary" autoFocus onClick={apply}>
-                Apply{snap.mode === 'simulation' ? ' (simulation)' : ''}
+              <button className="btn ghost" onClick={() => setPreview(null)} disabled={applying}>Cancel</button>
+              <button className={`btn primary${sw?.live ? ' live' : ''}`} autoFocus disabled={applying} onClick={apply}>
+                {applying
+                  ? (sw?.live ? 'Pushing to switch…' : 'Applying…')
+                  : `Apply${sw?.live ? ' — real switch' : ' (simulation)'}`}
               </button>
             </div>
           </div>
@@ -294,8 +331,8 @@ function StatePill({ state }: { state: Port['state'] }) {
   return <span className="pill mute">— down</span>
 }
 
-function vlanLabel(id: number): string {
-  const v = VLANS.find((x) => x.id === id)
+function vlanLabel(vlans: { id: number; name: string }[], id: number): string {
+  const v = vlans.find((x) => x.id === id)
   return v ? `${v.id} — ${v.name}` : String(id)
 }
 

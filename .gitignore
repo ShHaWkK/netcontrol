@@ -1,7 +1,10 @@
 __pycache__/
 *.pyc
 .venv/
+.env
+backend/.env
 backend/data/
+backend/*.egg-info/
 node_modules/
 dist/
 *.tsbuildinfo

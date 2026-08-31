@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
+import { onViewChange, type ViewKey } from './nav'
 import { useStore } from './store'
 import { ToastHost } from './toast'
-import { hms } from './utils'
+import { hms, isDarkTheme, onThemeChange, toggleTheme } from './utils'
 import Heatmap from './views/Heatmap'
 import Logs from './views/Logs'
 import Overview from './views/Overview'
 import SwitchManager from './views/SwitchManager'
-
-type ViewKey = 'overview' | 'heatmap' | 'switch' | 'logs'
+import Topology from './views/Topology'
 
 const NAV: { key: ViewKey; label: string; icon: JSX.Element }[] = [
   {
@@ -41,6 +41,16 @@ const NAV: { key: ViewKey; label: string; icon: JSX.Element }[] = [
     ),
   },
   {
+    key: 'topology',
+    label: 'Topology',
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+        <circle cx="3" cy="3.5" r="1.6" /><circle cx="12" cy="3.5" r="1.6" /><circle cx="7.5" cy="11.5" r="1.6" />
+        <path d="M4.4 4.6L6.3 10M10.6 4.6L8.7 10M4.6 3.5h5.8" />
+      </svg>
+    ),
+  },
+  {
     key: 'logs',
     label: 'Logs',
     icon: (
@@ -60,16 +70,43 @@ function Clock() {
   return <span className="clock">{hms(now)}</span>
 }
 
+function ThemeToggle() {
+  const [dark, setDark] = useState(isDarkTheme)
+  useEffect(() => onThemeChange(() => setDark(isDarkTheme())), [])
+  return (
+    <button
+      className="theme-toggle"
+      onClick={toggleTheme}
+      aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+    >
+      {dark ? (
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <circle cx="7.5" cy="7.5" r="3.2" />
+          <path d="M7.5 1v1.6M7.5 12.4V14M1 7.5h1.6M12.4 7.5H14M3.1 3.1l1.15 1.15M10.75 10.75l1.15 1.15M3.1 11.9l1.15-1.15M10.75 4.25l1.15-1.15" />
+        </svg>
+      ) : (
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12.9 8.6A5.6 5.6 0 0 1 6.4 2.1a5.6 5.6 0 1 0 6.5 6.5Z" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
 export default function App() {
   const { snap, connected } = useStore()
   const [view, setView] = useState<ViewKey>('overview')
+
+  useEffect(() => onViewChange(setView), [])
 
   if (!snap) {
     return <div className="loading">Connecting to NetControl server…</div>
   }
 
-  const alertCount = snap.alerts.filter((a) => !a.acked).length
+  const alertCount = snap.alerts_live ? snap.alerts.filter((a) => !a.acked).length : 0
   const isSim = snap.mode === 'simulation'
+  const isHybrid = snap.mode === 'hybrid'
   const initials = snap.operator.slice(0, 2).toUpperCase()
 
   return (
@@ -108,6 +145,11 @@ export default function App() {
               <span className="sim-dot" />SIMULATION MODE
             </div>
           )}
+          {isHybrid && (
+            <div className="env hybrid">
+              <span className="sim-dot live" />LIVE + SIMULATED
+            </div>
+          )}
           <span className="foot-text">
             On-site server · Terrou-Bi
             <br />
@@ -129,7 +171,9 @@ export default function App() {
           </div>
           <div className="spacer" />
           {isSim && <span className="chip sim">SIMULATED DATA</span>}
+          {isHybrid && <span className="chip hybrid">LIVE + SIMULATED DATA</span>}
           <Clock />
+          <ThemeToggle />
           <span className="user">
             <span className="avatar">{initials}</span>
             <span className="user-mail">{snap.operator}</span>
@@ -146,9 +190,12 @@ export default function App() {
           {view === 'overview' && <Overview />}
           {view === 'heatmap' && <Heatmap />}
           {view === 'switch' && <SwitchManager />}
+          {view === 'topology' && <Topology />}
           {view === 'logs' && <Logs />}
           <div className="foot-note">
-            NetControl {isSim ? '— simulation mode · 100% simulated data ' : ''}· © BSRQ.MEDIA 2026
+            NetControl {isSim ? '— simulation mode · 100% simulated data ' : ''}
+            {isHybrid ? '— hybrid mode · some views are live, others still simulated ' : ''}
+            · © BSRQ.MEDIA 2026
           </div>
         </div>
       </div>

@@ -59,6 +59,7 @@ export interface Switch {
   loc: string
   ports: Port[]
   sfp: SfpPort[]
+  live: boolean
 }
 
 export interface Alert {
@@ -122,11 +123,14 @@ export interface Snapshot {
   operator: string
   kpis: Kpis
   aps: Ap[]
+  aps_live: boolean
   rooms: Room[]
   devices: Device[]
   wan: WanLink[]
+  wan_live: boolean
   switches: Switch[]
   alerts: Alert[]
+  alerts_live: boolean
   logs: LogEntry[]
   ssid_history: SsidHistory
 }
@@ -177,3 +181,14 @@ export const PROFILES: PortProfile[] = [
   { name: 'Video conf', vlan: 50, desc_prefix: 'VISIO-', extra: ['switchport port-security maximum 2'] },
   { name: 'Wired station', vlan: 10, desc_prefix: 'LAN-', extra: [] },
 ]
+
+/** Réponse de GET /api/meta — vlans/profiles réels si un switch live existe,
+ * simulés sinon (voir backend/app/providers/hybrid.py::get_vlans). */
+export interface Meta {
+  mode: string
+  site_name: string
+  site_location: string
+  operator: string
+  vlans: Vlan[]
+  profiles: PortProfile[]
+}

@@ -12,6 +12,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "httpx>=0.27"]
+# pip install -e ".[real]" quand on branche du matériel.
+real = ["netmiko>=4.3", "httpx>=0.27", "pysnmp-lextudio>=5.1"]
 
 [build-system]
 requires = ["setuptools>=68"]

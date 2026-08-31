@@ -30,3 +30,23 @@ export function onThemeChange(cb: () => void): () => void {
     mo.disconnect()
   }
 }
+
+const THEME_KEY = 'netcontrol-theme'
+
+export function isDarkTheme(): boolean {
+  const forced = document.documentElement.dataset.theme
+  if (forced === 'dark') return true
+  if (forced === 'light') return false
+  return matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+export function applyStoredTheme(): void {
+  const saved = localStorage.getItem(THEME_KEY)
+  if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved
+}
+
+export function toggleTheme(): void {
+  const next = isDarkTheme() ? 'light' : 'dark'
+  document.documentElement.dataset.theme = next
+  localStorage.setItem(THEME_KEY, next)
+}

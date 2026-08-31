@@ -8,6 +8,7 @@ from ..models import (
     LogEntry,
     PortConfigRequest,
     Snapshot,
+    Vlan,
 )
 
 
@@ -58,3 +59,9 @@ class DataProvider(ABC):
     def apply_port_config(
         self, switch_name: str, port_n: int, req: PortConfigRequest
     ) -> CliPreview: ...
+
+    @abstractmethod
+    def get_vlans(self) -> list[Vlan]:
+        """Liste des VLANs à proposer dans le Switch Manager — réels si un
+        switch live existe, simulés sinon."""
+        ...
