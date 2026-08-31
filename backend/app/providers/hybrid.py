@@ -12,6 +12,9 @@ from typing import Awaitable, Callable, Optional
 from ..config import settings
 from ..models import Alert, Ap, CliPreview, Device, LogEntry, PortConfigRequest, Snapshot, Vlan
 from .base import DataProvider
+from .inventory import SwitchEntry, load_inventory
+from .inventory import remove as inventory_remove
+from .inventory import upsert as inventory_upsert
 from .netmiko_switch import SwitchGateway
 from .simulation import PROFILES, SimulationProvider
 from .zabbix_gateway import ZabbixGateway
@@ -19,21 +22,30 @@ from .zabbix_gateway import ZabbixGateway
 logger = logging.getLogger("netcontrol.hybrid")
 
 
-def build_gateways() -> list[SwitchGateway]:
-    if not settings.switch_targets or not settings.switch_user:
-        return []
+def _gateway_from_entry(entry: SwitchEntry) -> SwitchGateway:
     extra = frozenset(settings.switch_protected_port_list)
-    return [
-        SwitchGateway(
-            host=host,
-            username=settings.switch_user,
-            password=settings.switch_password or "",
-            secret=settings.switch_secret or "",
-            device_type=device_type,
-            extra_protected=extra,
-        )
+    return SwitchGateway(
+        host=entry.host,
+        username=entry.username or settings.switch_user or "",
+        password=entry.password or settings.switch_password or "",
+        secret=entry.secret or settings.switch_secret or "",
+        device_type=entry.device_type,
+        extra_protected=extra,
+    )
+
+
+def build_gateways() -> list[SwitchGateway]:
+    """Switchs fixés dans backend/.env au démarrage + ceux ajoutés depuis
+    l'admin et persistés dans backend/data/switches.json (l'inventaire prend
+    le dessus en cas de doublon d'hôte)."""
+    env_entries = [
+        SwitchEntry(host=host, device_type=device_type)
         for host, device_type in settings.switch_targets
     ]
+    by_host: dict[str, SwitchEntry] = {e.host: e for e in env_entries}
+    for e in load_inventory():
+        by_host[e.host] = e
+    return [_gateway_from_entry(e) for e in by_host.values() if e.username or settings.switch_user]
 
 
 def build_zabbix() -> Optional[ZabbixGateway]:
@@ -102,6 +114,45 @@ class HybridProvider(DataProvider):
 
     def _gateway_for(self, switch_name: str) -> Optional[SwitchGateway]:
         return self._live.get(switch_name)
+
+    # ── Admin — ajout/retrait de switchs à chaud, sans redémarrage ────
+    def list_switch_inventory(self) -> list[dict]:
+        env_hosts = {h for h, _ in settings.switch_targets}
+        by_host: dict[str, SwitchEntry] = {
+            h: SwitchEntry(host=h, device_type=dt) for h, dt in settings.switch_targets
+        }
+        for e in load_inventory():
+            by_host[e.host] = e
+        out = []
+        for host, entry in by_host.items():
+            name = next((n for n, gw in self._live.items() if gw.host == host), None)
+            out.append({
+                "host": host,
+                "device_type": entry.device_type,
+                "connected": name is not None,
+                "name": name,
+                "from_env": host in env_hosts,
+            })
+        return out
+
+    async def add_switch(self, entry: SwitchEntry) -> bool:
+        gw = _gateway_from_entry(entry)
+        loop = asyncio.get_running_loop()
+        ok = await loop.run_in_executor(None, gw.probe)
+        if ok and gw._name:
+            self._live[gw._name] = gw
+            inventory_upsert(entry)
+            logger.info("Switch ajouté à chaud : %s (%s)", gw._name, gw.host)
+            if not self._poll_task or self._poll_task.done():
+                self._poll_task = asyncio.create_task(self._poll_loop())
+        return ok
+
+    def remove_switch(self, host: str) -> bool:
+        name = next((n for n, gw in self._live.items() if gw.host == host), None)
+        if name:
+            del self._live[name]
+        inventory_remove(host)
+        return name is not None
 
     # ── Composition du snapshot ───────────────────────────────────────
     def snapshot(self) -> Snapshot:

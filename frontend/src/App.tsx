@@ -3,6 +3,7 @@ import { onViewChange, type ViewKey } from './nav'
 import { useStore } from './store'
 import { ToastHost } from './toast'
 import { hms, isDarkTheme, onThemeChange, toggleTheme } from './utils'
+import Admin from './views/Admin'
 import Heatmap from './views/Heatmap'
 import Logs from './views/Logs'
 import Overview from './views/Overview'
@@ -56,6 +57,16 @@ const NAV: { key: ViewKey; label: string; icon: JSX.Element }[] = [
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
         <path d="M2.5 3.5h10M2.5 7.5h10M2.5 11.5h6" />
+      </svg>
+    ),
+  },
+  {
+    key: 'admin',
+    label: 'Admin',
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="7.5" cy="7.5" r="2" />
+        <path d="M7.5 1.8v1.6M7.5 11.6v1.6M13.2 7.5h-1.6M3.4 7.5H1.8M11.4 3.6l-1.1 1.1M4.7 10.2l-1.1 1.1M11.4 11.4l-1.1-1.1M4.7 4.8L3.6 3.6" />
       </svg>
     ),
   },
@@ -192,6 +203,7 @@ export default function App() {
           {view === 'switch' && <SwitchManager />}
           {view === 'topology' && <Topology />}
           {view === 'logs' && <Logs />}
+          {view === 'admin' && <Admin />}
           <div className="foot-note">
             NetControl {isSim ? '— simulation mode · 100% simulated data ' : ''}
             {isHybrid ? '— hybrid mode · some views are live, others still simulated ' : ''}

@@ -2,7 +2,7 @@
  * Heatmap de sauter directement sur le bon port du Switch Manager pour
  * résoudre un incident au plus vite, sans routeur ni prop-drilling. */
 
-export type ViewKey = 'overview' | 'heatmap' | 'switch' | 'topology' | 'logs'
+export type ViewKey = 'overview' | 'heatmap' | 'switch' | 'topology' | 'logs' | 'admin'
 
 interface PendingPortSelection {
   swName: string

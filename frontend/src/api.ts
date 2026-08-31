@@ -1,4 +1,4 @@
-import type { Alert, Ap, CliPreview, PortConfigRequest } from './types'
+import type { Alert, Ap, CliPreview, PortConfigRequest, SwitchInventoryEntry } from './types'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -29,4 +29,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(req),
     }),
+  listSwitches: () => request<SwitchInventoryEntry[]>('/api/admin/switches'),
+  addSwitch: (entry: {
+    host: string
+    device_type: string
+    username?: string
+    password?: string
+    secret?: string
+  }) => request<{ connected: boolean }>('/api/admin/switches', {
+    method: 'POST',
+    body: JSON.stringify(entry),
+  }),
+  removeSwitch: (host: string) =>
+    request<{ removed: boolean }>(`/api/admin/switches/${encodeURIComponent(host)}`, { method: 'DELETE' }),
 }

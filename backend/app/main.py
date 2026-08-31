@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .models import PortConfigRequest, PositionUpdate
 from .providers.hybrid import HybridProvider
+from .providers.inventory import SwitchEntry
 from .providers.simulation import PROFILES
 
 # HybridProvider bascule automatiquement : switch(s) réel(s) via Netmiko
@@ -161,3 +162,30 @@ async def apply_port(switch_name: str, port_n: int, req: PortConfigRequest):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "mode": settings.mode}
+
+
+# ── Admin — inventaire des switchs, à chaud, sans redémarrage ─────────────
+# ⚠️ Pas d'authentification sur cette API (comme le reste de NetControl) :
+# quiconque atteint ce backend sur le réseau peut lister/ajouter/retirer des
+# switchs, identifiants compris. Acceptable pour un outil d'exploitation
+# on-site à accès réseau restreint ; à revoir si le backend devient joignable
+# plus largement.
+@app.get("/api/admin/switches")
+def list_switches():
+    return provider.list_switch_inventory()
+
+
+@app.post("/api/admin/switches")
+async def add_switch(entry: SwitchEntry):
+    ok = await provider.add_switch(entry)
+    if not ok:
+        raise HTTPException(422, "Connexion échouée — vérifier IP, joignabilité réseau et identifiants")
+    await manager.broadcast_snapshot()
+    return {"connected": True}
+
+
+@app.delete("/api/admin/switches/{host}")
+async def remove_switch(host: str):
+    removed = provider.remove_switch(host)
+    await manager.broadcast_snapshot()
+    return {"removed": removed}

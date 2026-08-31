@@ -142,6 +142,14 @@ export interface CliPreview {
   lines: string[]
 }
 
+export interface SwitchInventoryEntry {
+  host: string
+  device_type: string
+  connected: boolean
+  name: string | null
+  from_env: boolean
+}
+
 export interface PortConfigRequest {
   action: 'config' | 'poe' | 'shut' | 'noshut'
   vlan?: number
