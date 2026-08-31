@@ -43,3 +43,29 @@ def upsert(entry: SwitchEntry) -> None:
 
 def remove(host: str) -> None:
     save_inventory([e for e in load_inventory() if e.host != host])
+
+
+class ZabbixConfig(BaseModel):
+    url: str
+    token: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
+def _zabbix_file():
+    return settings.data_dir / "zabbix.json"
+
+
+def load_zabbix() -> Optional[ZabbixConfig]:
+    try:
+        return ZabbixConfig(**json.loads(_zabbix_file().read_text()))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def save_zabbix(cfg: ZabbixConfig) -> None:
+    _zabbix_file().write_text(json.dumps(cfg.model_dump(), indent=2))
+
+
+def clear_zabbix() -> None:
+    _zabbix_file().unlink(missing_ok=True)

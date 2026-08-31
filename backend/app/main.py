@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .models import PortConfigRequest, PositionUpdate
 from .providers.hybrid import HybridProvider
-from .providers.inventory import SwitchEntry
+from .providers.inventory import SwitchEntry, ZabbixConfig
 from .providers.simulation import PROFILES
 
 # HybridProvider bascule automatiquement : switch(s) réel(s) via Netmiko
@@ -189,3 +189,25 @@ async def remove_switch(host: str):
     removed = provider.remove_switch(host)
     await manager.broadcast_snapshot()
     return {"removed": removed}
+
+
+@app.get("/api/admin/zabbix")
+def zabbix_status():
+    return provider.zabbix_status()
+
+
+@app.post("/api/admin/zabbix")
+async def connect_zabbix(cfg: ZabbixConfig):
+    ok = await provider.connect_zabbix(cfg)
+    if not ok:
+        raise HTTPException(422, "Connexion échouée — vérifier l'URL (utiliser le nom du service Docker, "
+                                  "ex: http://zabbix-web:8080, pas l'IP publiée) et le token/identifiants")
+    await manager.broadcast_snapshot()
+    return {"connected": True}
+
+
+@app.delete("/api/admin/zabbix")
+async def remove_zabbix():
+    provider.disconnect_zabbix()
+    await manager.broadcast_snapshot()
+    return {"removed": True}

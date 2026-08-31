@@ -42,4 +42,11 @@ export const api = {
   }),
   removeSwitch: (host: string) =>
     request<{ removed: boolean }>(`/api/admin/switches/${encodeURIComponent(host)}`, { method: 'DELETE' }),
+  zabbixStatus: () => request<{ configured: boolean; connected: boolean; url: string | null }>('/api/admin/zabbix'),
+  connectZabbix: (cfg: { url: string; token?: string; username?: string; password?: string }) =>
+    request<{ connected: boolean }>('/api/admin/zabbix', {
+      method: 'POST',
+      body: JSON.stringify(cfg),
+    }),
+  disconnectZabbix: () => request<{ removed: boolean }>('/api/admin/zabbix', { method: 'DELETE' }),
 }

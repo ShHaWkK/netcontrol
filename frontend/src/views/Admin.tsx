@@ -3,6 +3,12 @@ import { api } from '../api'
 import { showToast } from '../toast'
 import type { SwitchInventoryEntry } from '../types'
 
+interface ZabbixStatus {
+  configured: boolean
+  connected: boolean
+  url: string | null
+}
+
 const DEVICE_TYPES = [
   { value: 'cisco_ios', label: 'Cisco IOS / IOS-XE' },
   { value: 'cisco_nxos', label: 'Cisco NX-OS' },
@@ -21,13 +27,49 @@ export default function Admin() {
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
 
+  const [zbx, setZbx] = useState<ZabbixStatus | null>(null)
+  const [zbxUrl, setZbxUrl] = useState('')
+  const [zbxAuthMode, setZbxAuthMode] = useState<'token' | 'password'>('token')
+  const [zbxToken, setZbxToken] = useState('')
+  const [zbxUser, setZbxUser] = useState('')
+  const [zbxPass, setZbxPass] = useState('')
+  const [zbxConnecting, setZbxConnecting] = useState(false)
+
   const refresh = () => api.listSwitches().then(setSwitches).catch(() => setSwitches([]))
+  const refreshZabbix = () => api.zabbixStatus().then(setZbx).catch(() => setZbx(null))
 
   useEffect(() => {
     refresh()
-    const id = setInterval(refresh, 5000)
+    refreshZabbix()
+    const id = setInterval(() => { refresh(); refreshZabbix() }, 5000)
     return () => clearInterval(id)
   }, [])
+
+  const connectZabbix = () => {
+    if (!zbxUrl.trim()) return
+    setZbxConnecting(true)
+    api
+      .connectZabbix({
+        url: zbxUrl.trim(),
+        token: zbxAuthMode === 'token' ? zbxToken || undefined : undefined,
+        username: zbxAuthMode === 'password' ? zbxUser || undefined : undefined,
+        password: zbxAuthMode === 'password' ? zbxPass || undefined : undefined,
+      })
+      .then(() => {
+        showToast('Zabbix connected', zbxUrl, 'success')
+        setZbxToken(''); setZbxUser(''); setZbxPass('')
+        refreshZabbix()
+      })
+      .catch((e) => showToast('Zabbix connection failed', e.message, 'error'))
+      .finally(() => setZbxConnecting(false))
+  }
+
+  const disconnectZabbix = () => {
+    api
+      .disconnectZabbix()
+      .then(() => { showToast('Zabbix disconnected', '', 'success'); setZbxUrl(''); refreshZabbix() })
+      .catch((e) => showToast('Failed', e.message, 'error'))
+  }
 
   const addSwitch = () => {
     if (!host.trim()) return
@@ -129,6 +171,67 @@ export default function Admin() {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid-2" style={{ marginTop: 14 }}>
+        <div className="card">
+          <div className="card-h">
+            <b>Zabbix</b>
+            <span className="sub">Real alerts &amp; metrics — no restart needed</span>
+          </div>
+          <div className="card-b" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {zbx?.connected ? (
+              <>
+                <div className="pp-id">
+                  <b>{zbx.url}</b>
+                  <span className="pill live">● LIVE</span>
+                </div>
+                <button className="btn ghost" style={{ color: 'var(--critical)', alignSelf: 'flex-start' }} onClick={disconnectZabbix}>
+                  Disconnect
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="field">
+                  <label htmlFor="zUrl">Zabbix URL</label>
+                  <input
+                    id="zUrl" type="text" placeholder="http://zabbix-web:8080" value={zbxUrl}
+                    onChange={(e) => setZbxUrl(e.target.value)}
+                  />
+                  <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>
+                    If Zabbix runs in this same docker-compose, use the service name
+                    (<code>http://zabbix-web:8080</code>), not the host IP/published port —
+                    the backend reaches it on the internal Docker network.
+                  </small>
+                </div>
+                <div className="seg" role="group" aria-label="Auth mode" style={{ alignSelf: 'flex-start' }}>
+                  <button className={zbxAuthMode === 'token' ? 'active' : ''} onClick={() => setZbxAuthMode('token')}>API token</button>
+                  <button className={zbxAuthMode === 'password' ? 'active' : ''} onClick={() => setZbxAuthMode('password')}>User / password</button>
+                </div>
+                {zbxAuthMode === 'token' ? (
+                  <div className="field">
+                    <label htmlFor="zTok">API token</label>
+                    <input id="zTok" type="password" value={zbxToken} onChange={(e) => setZbxToken(e.target.value)} />
+                  </div>
+                ) : (
+                  <>
+                    <div className="field">
+                      <label htmlFor="zUser">Username</label>
+                      <input id="zUser" type="text" value={zbxUser} onChange={(e) => setZbxUser(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="zPass">Password</label>
+                      <input id="zPass" type="password" value={zbxPass} onChange={(e) => setZbxPass(e.target.value)} />
+                    </div>
+                  </>
+                )}
+                <button className="btn primary" disabled={zbxConnecting || !zbxUrl.trim()} onClick={connectZabbix}>
+                  {zbxConnecting ? 'Connecting…' : 'Connect'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

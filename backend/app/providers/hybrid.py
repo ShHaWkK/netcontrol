@@ -12,7 +12,8 @@ from typing import Awaitable, Callable, Optional
 from ..config import settings
 from ..models import Alert, Ap, CliPreview, Device, LogEntry, PortConfigRequest, Snapshot, Vlan
 from .base import DataProvider
-from .inventory import SwitchEntry, load_inventory
+from .inventory import SwitchEntry, ZabbixConfig, load_inventory, load_zabbix, save_zabbix
+from .inventory import clear_zabbix as inventory_clear_zabbix
 from .inventory import remove as inventory_remove
 from .inventory import upsert as inventory_upsert
 from .netmiko_switch import SwitchGateway
@@ -49,6 +50,12 @@ def build_gateways() -> list[SwitchGateway]:
 
 
 def build_zabbix() -> Optional[ZabbixGateway]:
+    """Priorité à la config ajoutée depuis l'admin (backend/data/zabbix.json)
+    si elle existe, sinon celle de backend/.env — même principe que les
+    switchs : ce qui est ajouté à chaud prime sur le démarrage figé."""
+    saved = load_zabbix()
+    if saved:
+        return ZabbixGateway(url=saved.url, token=saved.token, username=saved.username, password=saved.password)
     if not settings.zabbix_url:
         return None
     if not settings.zabbix_token and not (settings.zabbix_user and settings.zabbix_password):
@@ -153,6 +160,32 @@ class HybridProvider(DataProvider):
             del self._live[name]
         inventory_remove(host)
         return name is not None
+
+    # ── Admin — Zabbix à chaud, sans redémarrage ──────────────────────
+    def zabbix_status(self) -> dict:
+        return {
+            "configured": self._zabbix is not None,
+            "connected": self._zabbix_live,
+            "url": self._zabbix.url if self._zabbix else None,
+        }
+
+    async def connect_zabbix(self, cfg: ZabbixConfig) -> bool:
+        gw = ZabbixGateway(url=cfg.url, token=cfg.token, username=cfg.username, password=cfg.password)
+        loop = asyncio.get_running_loop()
+        ok = await loop.run_in_executor(None, gw.probe)
+        if ok:
+            self._zabbix = gw
+            self._zabbix_live = True
+            save_zabbix(cfg)
+            logger.info("Zabbix connecté à chaud : %s", cfg.url)
+            if not self._poll_task or self._poll_task.done():
+                self._poll_task = asyncio.create_task(self._poll_loop())
+        return ok
+
+    def disconnect_zabbix(self) -> None:
+        self._zabbix = None
+        self._zabbix_live = False
+        inventory_clear_zabbix()
 
     # ── Composition du snapshot ───────────────────────────────────────
     def snapshot(self) -> Snapshot:
