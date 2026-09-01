@@ -19,7 +19,7 @@ function inferNeighbor(desc: string, others: string[]): { label: string; interna
     if (name && upper.includes(name.toUpperCase())) return { label: name, internal: true }
   }
   const label = desc.replace(/^UPLINK[-\s]*/i, '').replace(/^TRUNK[-\s]*/i, '').trim()
-  return { label: label || '(unlabeled)', internal: false }
+  return { label: label || '(sans étiquette)', internal: false }
 }
 
 function linksFor(sw: Switch, others: string[]): Link[] {
@@ -39,7 +39,7 @@ function linksFor(sw: Switch, others: string[]): Link[] {
 
 function StatusDot({ state }: { state: string }) {
   const cls = state === 'up' ? 'ok' : state === 'err' ? 'crit' : 'mute'
-  return <span className={`pill ${cls}`}>● {state === 'up' ? 'up' : state === 'err' ? 'err-disabled' : 'down'}</span>
+  return <span className={`pill ${cls}`}>● {state === 'up' ? 'actif' : state === 'err' ? 'err-disabled' : 'inactif'}</span>
 }
 
 export default function Topology() {
@@ -49,17 +49,17 @@ export default function Topology() {
   return (
     <section>
       <div className="view-head">
-        <h1>Topology</h1>
-        <p>Switch interconnections — inferred from real port/uplink descriptions</p>
+        <h1>Topologie</h1>
+        <p>Interconnexions entre switchs — déduites des descriptions réelles de ports/uplinks</p>
       </div>
 
       {snap.switches.length === 0 && (
         <div className="card">
           <div className="card-b">
             <div className="pp-empty no-source" style={{ padding: '48px 20px' }}>
-              <b>No switch connected.</b>
+              <b>Aucun switch connecté.</b>
               <br />
-              Add one from the <b>Admin</b> tab to see its interconnections here.
+              Ajoutes-en un depuis l'onglet <b>Admin</b> pour voir ses interconnexions ici.
             </div>
           </div>
         </div>
@@ -76,7 +76,7 @@ export default function Topology() {
               </div>
               <div className="card-b">
                 {links.length === 0 && (
-                  <div className="pp-empty">No uplink/trunk port with a usable description.</div>
+                  <div className="pp-empty">Aucun port uplink/trunk avec une description exploitable.</div>
                 )}
                 {links.length > 0 && (
                   <div className="topo-links">
@@ -101,6 +101,7 @@ export default function Topology() {
       <p className="foot-note" style={{ textAlign: 'left', marginTop: 14 }}>
         🔗 = lien vers un autre switch NetControl · ⇥ = lien vers un équipement externe (déduit du libellé de port, pas encore d'inventaire réseau).
       </p>
+
     </section>
   )
 }

@@ -59,9 +59,9 @@ interface MetricDef {
 
 const METRICS: Record<MetricKey, MetricDef> = {
   clients: { label: 'Clients', min: 0, max: 22, val: apClients, fmt: (v) => String(v) },
-  util: { label: 'Channel utilization', min: 0, max: 100, val: (ap) => ap.util, fmt: (v) => `${v}%` },
-  noise: { label: 'Noise', min: -100, max: -70, val: (ap) => ap.noise, fmt: (v) => `${v} dBm` },
-  rssi: { label: 'Avg RSSI', min: -85, max: -45, inv: true, val: (ap) => ap.rssi, fmt: (v) => `${v} dBm` },
+  util: { label: 'Utilisation canal', min: 0, max: 100, val: (ap) => ap.util, fmt: (v) => `${v}%` },
+  noise: { label: 'Bruit', min: -100, max: -70, val: (ap) => ap.noise, fmt: (v) => `${v} dBm` },
+  rssi: { label: 'RSSI moyen', min: -85, max: -45, inv: true, val: (ap) => ap.rssi, fmt: (v) => `${v} dBm` },
 }
 
 function drawPlan(cv: HTMLCanvasElement, rooms: Room[]) {
@@ -119,7 +119,7 @@ function drawPlan(cv: HTMLCanvasElement, rooms: Room[]) {
     ctx.fillText(r.label.toUpperCase(), 0, 0)
     ctx.restore()
   })
-  ctx.fillText('CORRIDOR', 468, 300)
+  ctx.fillText('COULOIR', 468, 300)
 
   // échelle + repère nord — détail de plan pro, coin bas-droit
   ctx.strokeStyle = cssVar('--ink-2')
@@ -247,8 +247,8 @@ export default function Heatmap() {
     return (
       <section>
         <div className="view-head">
-          <h1>WiFi Heatmap</h1>
-          <p>Level 1 — IOC zone · Terrou-Bi Hotel</p>
+          <h1>Carte WiFi</h1>
+          <p>Niveau 1 — zone IOC · Hôtel Terrou-Bi</p>
         </div>
         <div className="card">
           <div className="card-b">
@@ -258,12 +258,12 @@ export default function Heatmap() {
                 <path d="M4.6 8a4.2 4.2 0 0 1 5.8 0" /><path d="M2.4 5.4a7.4 7.4 0 0 1 10.2 0" />
                 <path d="M1.5 1.5l12 12" strokeLinecap="round" />
               </svg>
-              <b>No WiFi controller connected.</b>
+              <b>Aucun contrôleur WiFi connecté.</b>
               <br />
-              There is nothing real to show here — no simulated data is displayed instead.
+              Il n'y a rien de réel à montrer ici — aucune donnée simulée n'est affichée à la place.
               <br />
-              Connect a WLC (SNMP, read-only community) to see live AP positions, client
-              counts and RSSI on the floor plan.
+              Connecte un WLC (SNMP, communauté en lecture seule) pour voir les positions des
+              bornes, le nombre de clients et le RSSI en direct sur le plan.
             </div>
           </div>
         </div>
@@ -274,8 +274,8 @@ export default function Heatmap() {
   return (
     <section>
       <div className="view-head">
-        <h1>WiFi Heatmap</h1>
-        <p>Level 1 — IOC zone · Terrou-Bi Hotel</p>
+        <h1>Carte WiFi</h1>
+        <p>Niveau 1 — zone IOC · Hôtel Terrou-Bi</p>
         <div className="tools">
           <label className={`toggle ${editMode ? 'on' : ''}`}>
             <input
@@ -283,7 +283,7 @@ export default function Heatmap() {
               checked={editMode}
               onChange={(e) => setEditMode(e.target.checked)}
             />
-            Edit mode — move APs
+            Mode édition — déplacer les bornes
           </label>
         </div>
       </div>
@@ -291,7 +291,7 @@ export default function Heatmap() {
       <div className="card">
         <div className="card-b" style={{ padding: '14px 16px' }}>
           <div className="hm-bar">
-            <div className="seg" role="group" aria-label="Metric">
+            <div className="seg" role="group" aria-label="Métrique">
               {(Object.keys(METRICS) as MetricKey[]).map((k) => (
                 <button
                   key={k}
@@ -309,7 +309,7 @@ export default function Heatmap() {
               disabled={metric !== 'clients'}
               onChange={(e) => setSsid(e.target.value as SsidFilter)}
             >
-              <option value="all">All SSIDs</option>
+              <option value="all">Tous les SSID</option>
               <option value="staff">IOC-Staff</option>
               <option value="members">IOC-Members</option>
               <option value="guests">IOC-Guests</option>
@@ -323,7 +323,7 @@ export default function Heatmap() {
           </div>
 
           <div className={`hm-wrap ${editMode ? 'editing' : ''}`} ref={wrapRef}>
-            <canvas ref={planRef} width={W} height={H} aria-label="Level 1 floor plan with WiFi heatmap" />
+            <canvas ref={planRef} width={W} height={H} aria-label="Plan du niveau 1 avec carte de chaleur WiFi" />
             <canvas ref={overlayRef} width={W} height={H} className="hm-overlay" />
             <div style={{ position: 'absolute', inset: 0 }}>
               {aps.map((ap) => (
@@ -331,7 +331,7 @@ export default function Heatmap() {
                   key={ap.id}
                   className={`ap-marker${ap.down ? ' down' : ''}${drag?.id === ap.id ? ' dragging' : ''}`}
                   style={{ left: `${(ap.x / W) * 100}%`, top: `${(ap.y / H) * 100}%` }}
-                  aria-label={ap.down ? `${ap.id} — offline, click to fix in Switch Manager` : ap.id}
+                  aria-label={ap.down ? `${ap.id} — hors ligne, cliquer pour corriger dans Gestion switchs` : ap.id}
                   onPointerEnter={() => setTipAp(ap.id)}
                   onPointerLeave={() => setTipAp(null)}
                   onPointerDown={(e) => {
@@ -357,12 +357,12 @@ export default function Heatmap() {
                 >
                   {tip.down ? (
                     <>
-                      <b>{tip.id}</b> <span className="pill crit">✕ Offline</span>
+                      <b>{tip.id}</b> <span className="pill crit">✕ Hors ligne</span>
                       <table><tbody>
                         <tr><td>{tip.room}</td></tr>
                         {tipPort && <tr><td>err-disabled — {tipPort.swName} {tipPort.n > 0 ? `Gi1/0/${tipPort.n}` : ''}</td></tr>}
                       </tbody></table>
-                      {tipPort && <div className="ap-tip-hint">⚡ Click marker to fix in Switch Manager</div>}
+                      {tipPort && <div className="ap-tip-hint">⚡ Cliquer le marqueur pour corriger dans Gestion switchs</div>}
                     </>
                   ) : (
                     <>
@@ -370,9 +370,9 @@ export default function Heatmap() {
                       <table><tbody>
                         <tr><td>{tip.room} · {tip.model}</td><td /></tr>
                         <tr><td>Clients</td><td>{apClients(tip, 'all')}</td></tr>
-                        <tr><td>Channel</td><td>{tip.util}%</td></tr>
-                        <tr><td>Noise</td><td>{tip.noise} dBm</td></tr>
-                        <tr><td>Avg RSSI</td><td>{tip.rssi} dBm</td></tr>
+                        <tr><td>Canal</td><td>{tip.util}%</td></tr>
+                        <tr><td>Bruit</td><td>{tip.noise} dBm</td></tr>
+                        <tr><td>RSSI moyen</td><td>{tip.rssi} dBm</td></tr>
                       </tbody></table>
                     </>
                   )}
@@ -381,29 +381,29 @@ export default function Heatmap() {
             </div>
           </div>
           <p style={{ margin: '10px 2px 0', fontSize: 11.5, color: 'var(--muted)' }}>
-            Operational view: Gaussian IDW interpolation of live metrics reported by each AP —
-            not an RF propagation model. AP positions are persisted.
+            Vue opérationnelle : interpolation IDW gaussienne des métriques en direct remontées
+            par chaque borne — pas un modèle de propagation RF. Les positions des bornes sont persistées.
           </p>
         </div>
       </div>
 
       <div className="card" style={{ marginTop: 14 }}>
         <div className="card-h">
-          <b>Access points — live</b>
+          <b>Bornes WiFi — en direct</b>
           <span className="sub">
-            {upCount}/{aps.length} online · {totalClients} associated clients
+            {upCount}/{aps.length} en ligne · {totalClients} clients associés
           </span>
         </div>
         <div className="table-scroll">
           <table className="log-table">
             <thead>
               <tr style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.07em' }}>
-                <td>AP</td><td>Room</td><td>Status</td>
+                <td>Borne</td><td>Salle</td><td>Statut</td>
                 <td style={{ textAlign: 'right' }}>Clients</td>
-                <td style={{ textAlign: 'right' }}>Staff / Members / Guests</td>
-                <td style={{ textAlign: 'right' }}>Channel</td>
-                <td style={{ textAlign: 'right' }}>Noise</td>
-                <td style={{ textAlign: 'right' }}>Avg RSSI</td>
+                <td style={{ textAlign: 'right' }}>Staff / Members / Invités</td>
+                <td style={{ textAlign: 'right' }}>Canal</td>
+                <td style={{ textAlign: 'right' }}>Bruit</td>
+                <td style={{ textAlign: 'right' }}>RSSI moyen</td>
               </tr>
             </thead>
             <tbody>
@@ -419,11 +419,11 @@ export default function Heatmap() {
                     <td style={{ color: 'var(--ink-2)' }}>{ap.room}</td>
                     <td>
                       {d ? (
-                        <span className="pill crit">✕ Offline</span>
+                        <span className="pill crit">✕ Hors ligne</span>
                       ) : ap.util >= 70 ? (
-                        <span className="pill warn">▲ High channel load</span>
+                        <span className="pill warn">▲ Charge canal élevée</span>
                       ) : (
-                        <span className="pill ok">● Online</span>
+                        <span className="pill ok">● En ligne</span>
                       )}
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>

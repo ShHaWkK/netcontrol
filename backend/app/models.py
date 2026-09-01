@@ -142,6 +142,17 @@ class SsidHistory(BaseModel):
     guests: list[int]
 
 
+class ZabbixMetric(BaseModel):
+    """Historique réel d'un item numérique Zabbix (CPU, mémoire, trafic
+    interface...) — remplace le besoin d'ouvrir l'UI Zabbix pour voir un
+    graphe : NetControl les affiche nativement dans son propre style."""
+    host: str
+    name: str
+    unit: str = ""
+    t: list[str] = []
+    values: list[Optional[float]] = []
+
+
 class Snapshot(BaseModel):
     """État complet poussé sur le WebSocket à chaque tick."""
 
@@ -161,6 +172,7 @@ class Snapshot(BaseModel):
     alerts_live: bool = False  # True = alertes lues en direct depuis Zabbix
     logs: list[LogEntry]
     ssid_history: SsidHistory
+    zabbix_metrics: list[ZabbixMetric] = []
 
 
 class PortProfile(BaseModel):
@@ -179,6 +191,16 @@ class PortConfigRequest(BaseModel):
 class VlanCreateRequest(BaseModel):
     id: int
     name: str
+
+
+class BulkSwitchRequest(BaseModel):
+    """Une entrée par ligne : IP seule, plage ("10.1.10.30-40" ou
+    "10.1.10.30-10.1.10.40"), optionnellement suffixée ":device_type"."""
+    entries: str
+    device_type: str = "cisco_ios"
+    username: Optional[str] = None
+    password: Optional[str] = None
+    secret: Optional[str] = None
 
 
 class CliPreview(BaseModel):

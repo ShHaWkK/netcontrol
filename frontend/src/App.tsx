@@ -13,7 +13,7 @@ import Topology from './views/Topology'
 const NAV: { key: ViewKey; label: string; icon: JSX.Element }[] = [
   {
     key: 'overview',
-    label: 'Overview',
+    label: "Vue d'ensemble",
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5">
         <rect x="1.5" y="1.5" width="5" height="5" rx="1" /><rect x="8.5" y="1.5" width="5" height="5" rx="1" />
@@ -23,7 +23,7 @@ const NAV: { key: ViewKey; label: string; icon: JSX.Element }[] = [
   },
   {
     key: 'heatmap',
-    label: 'WiFi Heatmap',
+    label: 'Carte WiFi',
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
         <circle cx="7.5" cy="10.5" r="1.1" fill="currentColor" stroke="none" />
@@ -33,7 +33,7 @@ const NAV: { key: ViewKey; label: string; icon: JSX.Element }[] = [
   },
   {
     key: 'switch',
-    label: 'Switch Manager',
+    label: 'Gestion switchs',
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5">
         <rect x="1.5" y="4.5" width="12" height="6" rx="1.2" />
@@ -43,7 +43,7 @@ const NAV: { key: ViewKey; label: string; icon: JSX.Element }[] = [
   },
   {
     key: 'topology',
-    label: 'Topology',
+    label: 'Topologie',
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
         <circle cx="3" cy="3.5" r="1.6" /><circle cx="12" cy="3.5" r="1.6" /><circle cx="7.5" cy="11.5" r="1.6" />
@@ -88,8 +88,8 @@ function ThemeToggle() {
     <button
       className="theme-toggle"
       onClick={toggleTheme}
-      aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-      title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      aria-label={dark ? 'Passer au thème clair' : 'Passer au thème sombre'}
+      title={dark ? 'Passer au thème clair' : 'Passer au thème sombre'}
     >
       {dark ? (
         <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -112,7 +112,7 @@ export default function App() {
   useEffect(() => onViewChange(setView), [])
 
   if (!snap) {
-    return <div className="loading">Connecting to NetControl server…</div>
+    return <div className="loading">Connexion au serveur NetControl…</div>
   }
 
   const alertCount = snap.alerts_live ? snap.alerts.filter((a) => !a.acked).length : 0
@@ -135,8 +135,8 @@ export default function App() {
           </div>
           <div className="by">BSRQ.MEDIA · Dakar 2026</div>
         </div>
-        <nav className="nav" aria-label="Main navigation">
-          <div className="nav-label">Monitoring</div>
+        <nav className="nav" aria-label="Navigation principale">
+          <div className="nav-label">Supervision</div>
           {NAV.map((item) => (
             <button
               key={item.key}
@@ -153,18 +153,18 @@ export default function App() {
         <div className="sidebar-foot">
           {isSim && (
             <div className="env">
-              <span className="sim-dot" />SIMULATION MODE
+              <span className="sim-dot" />MODE SIMULATION
             </div>
           )}
           {isHybrid && (
             <div className="env hybrid">
-              <span className="sim-dot live" />LIVE + SIMULATED
+              <span className="sim-dot live" />RÉEL + SIMULÉ
             </div>
           )}
           <span className="foot-text">
-            On-site server · Terrou-Bi
+            Serveur sur site · Terrou-Bi
             <br />
-            Zabbix 7.0 LTS · offline-ready
+            Zabbix 7.0 LTS · fonctionne hors-ligne
           </span>
         </div>
       </aside>
@@ -181,8 +181,8 @@ export default function App() {
             {snap.site_name} <small>· {snap.site_location}</small>
           </div>
           <div className="spacer" />
-          {isSim && <span className="chip sim">SIMULATED DATA</span>}
-          {isHybrid && <span className="chip hybrid">LIVE + SIMULATED DATA</span>}
+          {isSim && <span className="chip sim">DONNÉES SIMULÉES</span>}
+          {isHybrid && <span className="chip hybrid">DONNÉES RÉELLES + SIMULÉES</span>}
           <Clock />
           <ThemeToggle />
           <span className="user">
@@ -193,7 +193,7 @@ export default function App() {
 
         {!connected && (
           <div className="conn-banner">
-            Live connection lost — reconnecting…
+            Connexion perdue — reconnexion…
           </div>
         )}
 
@@ -205,8 +205,8 @@ export default function App() {
           {view === 'logs' && <Logs />}
           {view === 'admin' && <Admin />}
           <div className="foot-note">
-            NetControl {isSim ? '— simulation mode · 100% simulated data ' : ''}
-            {isHybrid ? '— hybrid mode · some views are live, others still simulated ' : ''}
+            NetControl {isSim ? '— mode simulation · 100% de données simulées ' : ''}
+            {isHybrid ? '— mode hybride · certaines vues sont réelles, d\'autres encore simulées ' : ''}
             · © BSRQ.MEDIA 2026
           </div>
         </div>

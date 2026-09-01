@@ -125,6 +125,14 @@ export interface SsidHistory {
   guests: number[]
 }
 
+export interface ZabbixMetric {
+  host: string
+  name: string
+  unit: string
+  t: string[]
+  values: (number | null)[]
+}
+
 export interface Snapshot {
   mode: string
   site_name: string
@@ -142,6 +150,7 @@ export interface Snapshot {
   alerts_live: boolean
   logs: LogEntry[]
   ssid_history: SsidHistory
+  zabbix_metrics: ZabbixMetric[]
 }
 
 export interface CliPreview {

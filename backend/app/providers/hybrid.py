@@ -12,12 +12,20 @@ from typing import Awaitable, Callable, Optional
 from ..config import settings
 from ..models import Alert, Ap, CliPreview, Device, LogEntry, PortConfigRequest, Snapshot, SwitchHistory, Vlan
 from .base import DataProvider
-from .inventory import SwitchEntry, ZabbixConfig, load_inventory, load_zabbix, save_zabbix
+from .inventory import (
+    SwitchEntry, WanTargetEntry, WlcConfig, ZabbixConfig,
+    load_inventory, load_wan_targets, load_wlc, load_zabbix, save_wlc, save_zabbix,
+)
+from .inventory import clear_wlc as inventory_clear_wlc
 from .inventory import clear_zabbix as inventory_clear_zabbix
 from .inventory import remove as inventory_remove
+from .inventory import remove_wan_target as inventory_remove_wan_target
 from .inventory import upsert as inventory_upsert
+from .inventory import upsert_wan_target as inventory_upsert_wan_target
 from .netmiko_switch import SwitchGateway
 from .simulation import PROFILES, SimulationProvider
+from .wan_probe import WanProbe
+from .wlc_gateway import WlcGateway
 from .zabbix_gateway import ZabbixGateway
 
 logger = logging.getLogger("netcontrol.hybrid")
@@ -68,6 +76,33 @@ def build_zabbix() -> Optional[ZabbixGateway]:
     )
 
 
+def build_wlc() -> Optional[WlcGateway]:
+    """Même principe : la config ajoutée depuis l'admin (backend/data/wlc.json)
+    prime sur backend/.env."""
+    saved = load_wlc()
+    if saved:
+        return WlcGateway(
+            host=saved.host,
+            snmp_version=saved.snmp_version,
+            community=saved.community,
+            v3_user=saved.v3_user,
+            v3_auth_password=saved.v3_auth_password,
+            v3_priv_password=saved.v3_priv_password,
+        )
+    hosts = settings.wlc_host_list
+    if not hosts:
+        return None
+    host = hosts[0]
+    return WlcGateway(
+        host=host,
+        snmp_version=settings.wlc_snmp_version,
+        community=settings.wlc_community,
+        v3_user=settings.wlc_v3_user,
+        v3_auth_password=settings.wlc_v3_auth_password,
+        v3_priv_password=settings.wlc_v3_priv_password,
+    )
+
+
 class HybridProvider(DataProvider):
     def __init__(self) -> None:
         self._sim = SimulationProvider()
@@ -76,6 +111,10 @@ class HybridProvider(DataProvider):
         self._live: dict[str, SwitchGateway] = {}
         self._zabbix: Optional[ZabbixGateway] = build_zabbix()
         self._zabbix_live = False
+        self._wlc: Optional[WlcGateway] = build_wlc()
+        self._wlc_live = False
+        self._wlc_aps: list = []
+        self._wan: dict[str, WanProbe] = {e.name: WanProbe(name=e.name, host=e.host) for e in load_wan_targets()}
         self._poll_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
@@ -94,7 +133,15 @@ class HybridProvider(DataProvider):
             if self._zabbix_live:
                 logger.info("Zabbix connecté : %s", settings.zabbix_url)
 
-        if self._live or self._zabbix_live:
+        if self._wlc:
+            self._wlc_live = await loop.run_in_executor(None, self._wlc.probe)
+            if self._wlc_live:
+                logger.info("WLC connecté : %s", self._wlc.host)
+
+        for probe in list(self._wan.values()):
+            await loop.run_in_executor(None, probe.ping_once)
+
+        if self._live or self._zabbix_live or self._wlc_live or self._wan:
             self._poll_task = asyncio.create_task(self._poll_loop())
 
     async def stop(self) -> None:
@@ -116,6 +163,24 @@ class HybridProvider(DataProvider):
                     await loop.run_in_executor(None, self._zabbix.get_problems)
                 except Exception as e:  # noqa: BLE001
                     logger.warning("Poll Zabbix échoué: %s", e)
+                try:
+                    # Plus coûteux (item.get + history.get par hôte) — cache interne
+                    # de 4× l'intervalle de poll pour rester léger sur Zabbix.
+                    await loop.run_in_executor(
+                        None, self._zabbix.cached_metrics, settings.zabbix_poll_seconds * 4,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Poll métriques Zabbix échoué: %s", e)
+            for name, probe in list(self._wan.items()):
+                try:
+                    await loop.run_in_executor(None, probe.ping_once)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Ping WAN échoué pour %s: %s", name, e)
+            if self._wlc_live and self._wlc:
+                try:
+                    self._wlc_aps = await loop.run_in_executor(None, self._wlc.get_aps)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Poll WLC échoué: %s", e)
             if self.on_change:
                 await self.on_change()
 
@@ -154,6 +219,26 @@ class HybridProvider(DataProvider):
                 self._poll_task = asyncio.create_task(self._poll_loop())
         return ok
 
+    async def add_switches_bulk(self, hosts: list[str], device_type: str,
+                                 username: Optional[str], password: Optional[str],
+                                 secret: Optional[str]) -> list[dict]:
+        """Connecte plusieurs switchs en parallèle (concurrence plafonnée) —
+        pour l'ajout en masse depuis l'admin (plage d'IP ou liste collée),
+        au lieu d'un switch à la fois."""
+        sem = asyncio.Semaphore(5)
+
+        async def _one(host: str) -> dict:
+            async with sem:
+                entry = SwitchEntry(host=host, device_type=device_type,
+                                     username=username, password=password, secret=secret)
+                try:
+                    ok = await self.add_switch(entry)
+                except Exception as e:  # noqa: BLE001
+                    return {"host": host, "connected": False, "error": str(e)}
+                return {"host": host, "connected": ok, "error": None if ok else "injoignable ou identifiants refusés"}
+
+        return await asyncio.gather(*(_one(h) for h in hosts))
+
     def remove_switch(self, host: str) -> bool:
         name = next((n for n, gw in self._live.items() if gw.host == host), None)
         if name:
@@ -187,6 +272,48 @@ class HybridProvider(DataProvider):
         self._zabbix_live = False
         inventory_clear_zabbix()
 
+    # ── Admin — WLC (contrôleur WiFi) à chaud, sans redémarrage ───────
+    # ⚠️ Lecture SNMP seule : nom + statut des AP. Pas encore branché sur
+    # aps_live/le heatmap — voir wlc_gateway.py, la position des AP sur le
+    # plan ne peut pas être déduite du SNMP et demande un calibrage manuel.
+    def wlc_status(self) -> dict:
+        return {
+            "configured": self._wlc is not None,
+            "connected": self._wlc_live,
+            "host": self._wlc.host if self._wlc else None,
+            "aps": [{"name": a.name, "operational": a.operational} for a in self._wlc_aps],
+        }
+
+    async def connect_wlc(self, cfg: WlcConfig) -> bool:
+        gw = WlcGateway(
+            host=cfg.host,
+            snmp_version=cfg.snmp_version,
+            community=cfg.community,
+            v3_user=cfg.v3_user,
+            v3_auth_password=cfg.v3_auth_password,
+            v3_priv_password=cfg.v3_priv_password,
+        )
+        loop = asyncio.get_running_loop()
+        ok = await loop.run_in_executor(None, gw.probe)
+        if ok:
+            self._wlc = gw
+            self._wlc_live = True
+            save_wlc(cfg)
+            logger.info("WLC connecté à chaud : %s", cfg.host)
+            try:
+                self._wlc_aps = await loop.run_in_executor(None, gw.get_aps)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Lecture AP WLC échouée juste après connexion: %s", e)
+            if not self._poll_task or self._poll_task.done():
+                self._poll_task = asyncio.create_task(self._poll_loop())
+        return ok
+
+    def disconnect_wlc(self) -> None:
+        self._wlc = None
+        self._wlc_live = False
+        self._wlc_aps = []
+        inventory_clear_wlc()
+
     # ── Composition du snapshot ───────────────────────────────────────
     def snapshot(self) -> Snapshot:
         snap = self._sim.snapshot()
@@ -214,10 +341,12 @@ class HybridProvider(DataProvider):
             )
             for sw in real
         ]
-        # Logs : ne garder que l'audit réel (actions effectivement appliquées
-        # via NetControl) — le syslog/alerte "de démo" seedé au démarrage
-        # de SimulationProvider n'est jamais montré.
-        snap.logs = [l for l in snap.logs if l.type == "audit"]
+        # Logs : l'audit réel (actions appliquées via NetControl) + l'historique
+        # réel des événements Zabbix quand connecté — jamais le syslog/alerte
+        # "de démo" seedé au démarrage de SimulationProvider.
+        audit = [l for l in snap.logs if l.type == "audit"]
+        events = self._zabbix.cached_events(settings.zabbix_poll_seconds * 2) if (self._zabbix_live and self._zabbix) else []
+        snap.logs = sorted(audit + events, key=lambda l: l.t, reverse=True)[:200]
 
         if self._zabbix_live and self._zabbix:
             alerts = self._zabbix.cached_or_read(settings.zabbix_poll_seconds * 2)
@@ -226,11 +355,49 @@ class HybridProvider(DataProvider):
             active = [a for a in alerts if not a.acked]
             snap.kpis.alerts_active = len(active)
             snap.kpis.alerts_critical = sum(1 for a in active if a.sev == "critical")
+            snap.zabbix_metrics = self._zabbix.cached_metrics(settings.zabbix_poll_seconds * 4)
+
+        if self._wan:
+            snap.wan = [p.snapshot() for p in self._wan.values()]
+            snap.wan_live = True
+
         # "mode" pilote les badges "SIMULATED DATA" côté frontend — il doit
         # refléter la réalité : au moins une source réelle connectée = hybrid,
         # sinon on reste honnêtement en "simulation".
-        snap.mode = "hybrid" if (self._live or self._zabbix_live) else "simulation"
+        snap.mode = "hybrid" if (self._live or self._zabbix_live or self._wan) else "simulation"
         return snap
+
+    # ── Admin — liens WAN à chaud, sans redémarrage ────────────────────
+    def list_wan_targets(self) -> list[dict]:
+        return [{"name": p.name, "host": p.host} for p in self._wan.values()]
+
+    async def add_wan_target(self, entry: WanTargetEntry) -> bool:
+        probe = WanProbe(name=entry.name, host=entry.host)
+        loop = asyncio.get_running_loop()
+        ok = await loop.run_in_executor(None, probe.probe)
+        if ok:
+            self._wan[entry.name] = probe
+            inventory_upsert_wan_target(entry)
+            logger.info("Lien WAN ajouté à chaud : %s (%s)", entry.name, entry.host)
+            if not self._poll_task or self._poll_task.done():
+                self._poll_task = asyncio.create_task(self._poll_loop())
+        return ok
+
+    def remove_wan_target(self, name: str) -> bool:
+        existed = name in self._wan
+        self._wan.pop(name, None)
+        inventory_remove_wan_target(name)
+        return existed
+
+    def get_port_traffic(self, switch_name: str, port_id: str) -> dict:
+        """Trafic réel (bits reçus/envoyés) d'un port — à la demande
+        seulement (voir zabbix_gateway.get_interface_history), utilisé par
+        Switch Manager quand un port est sélectionné."""
+        gw = self._live.get(switch_name)
+        if not gw or not (self._zabbix_live and self._zabbix):
+            return {}
+        metrics = self._zabbix.get_interface_history(gw.host, port_id)
+        return {k: v.model_dump() for k, v in metrics.items()}
 
     def get_vlans(self) -> list[Vlan]:
         # /api/meta est un endpoint global (pas par switch) — les VLANs réels
@@ -264,11 +431,19 @@ class HybridProvider(DataProvider):
         return self._sim.ack_alert(alert_id)
 
     def get_logs(self, type_=None, sev=None, query=None, limit=120) -> list[LogEntry]:
-        # Seul le type "audit" est réel (actions appliquées via NetControl) —
-        # syslog/alerte de la maquette simulée ne sont jamais montrés, quel
-        # que soit le filtre demandé côté UI.
-        logs = self._sim.get_logs(type_="audit", sev=sev, query=query, limit=limit)
-        return [l for l in logs if l.type == "audit"]
+        # L'audit NetControl reste toujours réel ; on y ajoute l'historique
+        # réel des événements Zabbix quand connecté — jamais le syslog/alerte
+        # de la maquette simulée, quel que soit le filtre demandé côté UI.
+        logs = [l for l in self._sim.get_logs(type_="audit", sev=sev, query=query, limit=limit) if l.type == "audit"]
+        if self._zabbix_live and self._zabbix:
+            events = self._zabbix.cached_events(settings.zabbix_poll_seconds * 2)
+            if sev:
+                events = [e for e in events if e.sev == sev]
+            if query:
+                q = query.lower()
+                events = [e for e in events if q in e.msg.lower() or q in e.src.lower()]
+            logs = logs + events
+        return sorted(logs, key=lambda l: l.t, reverse=True)[:limit]
 
     # ── Switch Manager — uniquement du réel, plus de repli simulé ────
     def preview_port_config(self, switch_name: str, port_n: int, req: PortConfigRequest) -> CliPreview:

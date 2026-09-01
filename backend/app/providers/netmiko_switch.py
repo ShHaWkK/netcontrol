@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Optional
 
 from ..models import CliPreview, Port, PortConfigRequest, PortProfile, SfpPort, Switch, Vlan
+from . import history_store
 
 logger = logging.getLogger("netcontrol.netmiko")
 
@@ -85,6 +86,7 @@ class SwitchGateway:
     _name: Optional[str] = field(default=None, init=False, repr=False)
     _vlans: list[Vlan] = field(default_factory=list, init=False, repr=False)
     _history: "deque[dict]" = field(default_factory=lambda: deque(maxlen=240), init=False, repr=False)
+    _history_loaded: bool = field(default=False, init=False, repr=False)
 
     def _device(self) -> dict:
         return {
@@ -124,12 +126,19 @@ class SwitchGateway:
         self._vlans = _parse_vlans(vlan_out)
         self._cache = switch
         self._cache_at = time.monotonic()
-        self._history.append({
+        if not self._history_loaded:
+            # Recharge l'historique persisté (survit aux redémarrages de
+            # conteneur) une seule fois, avant d'ajouter le point courant.
+            self._history.extend(history_store.load_recent(self.host, self._history.maxlen))
+            self._history_loaded = True
+        point = {
             "t": datetime.now().isoformat(timespec="seconds"),
             "cpu": switch.cpu_pct,
             "temp": switch.temp_c,
             "poe": round(sum(p.poe for p in switch.ports), 1),
-        })
+        }
+        self._history.append(point)
+        history_store.append_point(self.host, **point)
         return switch
 
     def cached_or_read(self, max_age: float) -> Switch:

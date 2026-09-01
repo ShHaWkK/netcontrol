@@ -4,9 +4,9 @@ import type { Severity } from '../types'
 import { hms } from '../utils'
 
 const SEV_PILL: Record<Severity, JSX.Element> = {
-  critical: <span className="pill crit">✕ Critical</span>,
-  serious: <span className="pill serious">▲ Major</span>,
-  warning: <span className="pill warn">▲ Warning</span>,
+  critical: <span className="pill crit">✕ Critique</span>,
+  serious: <span className="pill serious">▲ Majeur</span>,
+  warning: <span className="pill warn">▲ Avertissement</span>,
   info: <span className="pill mute">ℹ Info</span>,
 }
 
@@ -37,18 +37,18 @@ export default function Logs() {
     <section>
       <div className="view-head">
         <h1>Logs</h1>
-        <p>NetControl audit trail — real actions only, no simulated syslog</p>
+        <p>Journal d'audit NetControl — actions réelles uniquement, pas de syslog simulé</p>
         <div className="tools log-filters">
-          <select aria-label="Severity" value={sev} onChange={(e) => setSev(e.target.value)}>
-            <option value="all">All severities</option>
-            <option value="critical">Critical</option>
-            <option value="serious">Major</option>
-            <option value="warning">Warning</option>
+          <select aria-label="Sévérité" value={sev} onChange={(e) => setSev(e.target.value)}>
+            <option value="all">Toutes sévérités</option>
+            <option value="critical">Critique</option>
+            <option value="serious">Majeur</option>
+            <option value="warning">Avertissement</option>
             <option value="info">Info</option>
           </select>
           <input
             type="search"
-            placeholder="Filter (device, message…)"
+            placeholder="Filtrer (équipement, message…)"
             style={{ width: 220 }}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -63,8 +63,8 @@ export default function Logs() {
               <tr>
                 <td style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>
                   {snap.logs.length === 0
-                    ? 'No audit entries yet — every real config change applied via Switch Manager will appear here.'
-                    : 'No entries match the current filters.'}
+                    ? 'Aucune entrée d\'audit pour le moment — chaque changement de config réel appliqué via Gestion switchs apparaîtra ici.'
+                    : 'Aucune entrée ne correspond aux filtres actuels.'}
                 </td>
               </tr>
             )}

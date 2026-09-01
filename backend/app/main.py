@@ -1,14 +1,15 @@
 import asyncio
 import contextlib
+import ipaddress
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .models import PortConfigRequest, PositionUpdate, VlanCreateRequest
+from .models import BulkSwitchRequest, PortConfigRequest, PositionUpdate, VlanCreateRequest
 from .providers.hybrid import HybridProvider
-from .providers.inventory import SwitchEntry, ZabbixConfig
+from .providers.inventory import SwitchEntry, WanTargetEntry, WlcConfig, ZabbixConfig
 from .providers.simulation import PROFILES
 
 # HybridProvider bascule automatiquement : switch(s) réel(s) via Netmiko
@@ -184,6 +185,12 @@ async def apply_vlan(switch_name: str, req: VlanCreateRequest):
     return result
 
 
+@app.get("/api/switches/{switch_name}/ports/{n}/traffic")
+def port_traffic(switch_name: str, n: int):
+    port_id = f"Gi1/0/{n}" if n > 0 else f"Te1/1/{-n}"
+    return provider.get_port_traffic(switch_name, port_id)
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "mode": settings.mode}
@@ -216,6 +223,50 @@ async def remove_switch(host: str):
     return {"removed": removed}
 
 
+_MAX_BULK_HOSTS = 100
+
+
+def _parse_bulk_hosts(entries: str) -> list[str]:
+    """Une entrée par ligne : IP seule, ou plage "10.1.10.30-40" /
+    "10.1.10.30-10.1.10.40" (bornes incluses). Lignes vides/commentées ('#')
+    ignorées."""
+    hosts: list[str] = []
+    for raw in entries.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "-" in line:
+            start, _, end = line.partition("-")
+            start, end = start.strip(), end.strip()
+            try:
+                if "." in end:
+                    start_ip, end_ip = int(ipaddress.IPv4Address(start)), int(ipaddress.IPv4Address(end))
+                else:
+                    prefix, _, _ = start.rpartition(".")
+                    start_ip = int(ipaddress.IPv4Address(start))
+                    end_ip = int(ipaddress.IPv4Address(f"{prefix}.{end}"))
+            except ValueError:
+                raise HTTPException(422, f"Plage invalide : {line!r}")
+            if end_ip < start_ip:
+                raise HTTPException(422, f"Plage invalide (fin avant début) : {line!r}")
+            hosts.extend(str(ipaddress.IPv4Address(i)) for i in range(start_ip, end_ip + 1))
+        else:
+            hosts.append(line)
+    if len(hosts) > _MAX_BULK_HOSTS:
+        raise HTTPException(422, f"Trop d'hôtes ({len(hosts)}) — {_MAX_BULK_HOSTS} maximum par ajout en masse")
+    return hosts
+
+
+@app.post("/api/admin/switches/bulk")
+async def add_switches_bulk(req: BulkSwitchRequest):
+    hosts = _parse_bulk_hosts(req.entries)
+    if not hosts:
+        raise HTTPException(422, "Aucun hôte trouvé dans la liste fournie")
+    results = await provider.add_switches_bulk(hosts, req.device_type, req.username, req.password, req.secret)
+    await manager.broadcast_snapshot()
+    return results
+
+
 @app.get("/api/admin/zabbix")
 def zabbix_status():
     return provider.zabbix_status()
@@ -236,3 +287,50 @@ async def remove_zabbix():
     provider.disconnect_zabbix()
     await manager.broadcast_snapshot()
     return {"removed": True}
+
+
+# ── Admin — WLC (contrôleur WiFi), à chaud ─────────────────────────────────
+# Lecture SNMP seule (nom + statut des AP) — pas encore relié au heatmap, voir
+# hybrid.py::wlc_status.
+@app.get("/api/admin/wlc")
+def wlc_status():
+    return provider.wlc_status()
+
+
+@app.post("/api/admin/wlc")
+async def connect_wlc(cfg: WlcConfig):
+    ok = await provider.connect_wlc(cfg)
+    if not ok:
+        raise HTTPException(422, "Connexion échouée — vérifier l'IP, la joignabilité réseau depuis le Debian "
+                                  "et la communauté SNMP (ou les identifiants v3)")
+    await manager.broadcast_snapshot()
+    return {"connected": True}
+
+
+@app.delete("/api/admin/wlc")
+async def remove_wlc():
+    provider.disconnect_wlc()
+    await manager.broadcast_snapshot()
+    return {"removed": True}
+
+
+# ── Admin — liens WAN (latence/perte réelles via ping), à chaud ───────────
+@app.get("/api/admin/wan")
+def list_wan_targets():
+    return provider.list_wan_targets()
+
+
+@app.post("/api/admin/wan")
+async def add_wan_target(entry: WanTargetEntry):
+    ok = await provider.add_wan_target(entry)
+    if not ok:
+        raise HTTPException(422, "Cible injoignable — vérifier l'IP/le nom d'hôte et la joignabilité réseau")
+    await manager.broadcast_snapshot()
+    return {"connected": True}
+
+
+@app.delete("/api/admin/wan/{name}")
+async def remove_wan_target(name: str):
+    removed = provider.remove_wan_target(name)
+    await manager.broadcast_snapshot()
+    return {"removed": removed}

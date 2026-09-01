@@ -45,7 +45,7 @@ export default function MetricChart({ t, values, unit, color, min: fixedMin, max
 
   const known = values.filter((v): v is number => v !== null)
   if (known.length < 2) {
-    return <div className="pp-empty" style={{ padding: '14px 4px', fontSize: 11.5 }}>Not enough data yet — collecting…</div>
+    return <div className="pp-empty" style={{ padding: '14px 4px', fontSize: 11.5 }}>Pas encore assez de données — collecte en cours…</div>
   }
 
   const n = values.length
@@ -66,14 +66,15 @@ export default function MetricChart({ t, values, unit, color, min: fixedMin, max
     setHover(values[i] !== null ? i : null)
   }
 
-  const last = known[known.length - 1]
+  const fmt = (v: number) => (Number.isInteger(v) ? v : Math.round(v * 100) / 100)
+  const last = fmt(known[known.length - 1])
   const hoverColor = cssVar('--accent') || color
 
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 2 }}>
         <span style={{ fontSize: 20, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{last}{unit}</span>
-        <span style={{ fontSize: 11, color: 'var(--muted)' }}>current</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>actuel</span>
       </div>
       <svg width={width} height={H} viewBox={`0 0 ${width} ${H}`} onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
         {ticks.map((v, i) => (
@@ -101,7 +102,7 @@ export default function MetricChart({ t, values, unit, color, min: fixedMin, max
       {hover !== null && values[hover] !== null && (
         <div className="ap-tip" style={{ left: X(hover), top: P.t, transform: 'translate(-50%,-100%)' }}>
           <b>{hms(t[hover])}</b>
-          <table><tbody><tr><td style={{ color: hoverColor, fontWeight: 700 }}>{values[hover]}{unit}</td></tr></tbody></table>
+          <table><tbody><tr><td style={{ color: hoverColor, fontWeight: 700 }}>{fmt(values[hover]!)}{unit}</td></tr></tbody></table>
         </div>
       )}
     </div>

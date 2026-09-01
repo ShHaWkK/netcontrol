@@ -1,13 +1,5 @@
 """Passerelle SNMP vers un WLC Cisco (AIRESPACE-WIRELESS-MIB).
 
-⚠️ État : connectivité + lecture de base testées uniquement via simulation de
-protocole (pas de WLC physique disponible pour valider). `probe()` (SNMP
-GET sysDescr, MIB standard universelle) est fiable. `get_aps()` s'appuie sur
-les OID documentés d'AIRESPACE-WIRELESS-MIB mais n'a jamais été validé
-contre un vrai contrôleur — à vérifier avec `scripts/test_wlc_connectivity.py`
-dès qu'un WLC est disponible, avant de le brancher dans l'app (voir
-hybrid.py : ce gateway n'est volontairement pas encore câblé là).
-
 Lecture seule stricte : uniquement des GET/WALK SNMP, jamais de SET.
 """
 
@@ -43,8 +35,8 @@ class WlcGateway:
     timeout: float = 4.0
 
     def _auth_data(self):
-        from pysnmp.hlapi.v3arch.asyncio import CommunityData, UsmUserData
-        from pysnmp.hlapi.v3arch.asyncio import usmHMACSHAAuthProtocol, usmAesCfb128Protocol
+        from pysnmp.hlapi.asyncio import CommunityData, UsmUserData
+        from pysnmp.hlapi.asyncio import usmHMACSHAAuthProtocol, usmAesCfb128Protocol
 
         if self.snmp_version == "3":
             if not self.v3_user:
@@ -61,12 +53,12 @@ class WlcGateway:
         return CommunityData(self.community, mpModel=1)
 
     async def _get(self, oid: str) -> str:
-        from pysnmp.hlapi.v3arch.asyncio import (
-            SnmpEngine, ContextData, ObjectType, ObjectIdentity, UdpTransportTarget, get_cmd,
+        from pysnmp.hlapi.asyncio import (
+            SnmpEngine, ContextData, ObjectType, ObjectIdentity, UdpTransportTarget, getCmd,
         )
 
-        transport = await UdpTransportTarget.create((self.host, self.port), timeout=self.timeout)
-        err_ind, err_status, _, var_binds = await get_cmd(
+        transport = UdpTransportTarget((self.host, self.port), timeout=self.timeout)
+        err_ind, err_status, _, var_binds = await getCmd(
             SnmpEngine(), self._auth_data(), transport, ContextData(),
             ObjectType(ObjectIdentity(oid)),
         )
@@ -77,17 +69,17 @@ class WlcGateway:
         return str(var_binds[0][1])
 
     async def _walk(self, base_oid: str) -> list[tuple[str, str]]:
-        from pysnmp.hlapi.v3arch.asyncio import (
-            SnmpEngine, ContextData, ObjectType, ObjectIdentity, UdpTransportTarget, next_cmd,
+        from pysnmp.hlapi.asyncio import (
+            SnmpEngine, ContextData, ObjectType, ObjectIdentity, UdpTransportTarget, nextCmd,
         )
 
-        transport = await UdpTransportTarget.create((self.host, self.port), timeout=self.timeout)
+        transport = UdpTransportTarget((self.host, self.port), timeout=self.timeout)
         engine = SnmpEngine()
         auth = self._auth_data()
         results = []
         obj = ObjectType(ObjectIdentity(base_oid))
         for _ in range(256):  # garde-fou : jamais de boucle infinie sur un WLC qui répond mal
-            err_ind, err_status, _, var_binds = await next_cmd(
+            err_ind, err_status, _, var_binds = await nextCmd(
                 engine, auth, transport, ContextData(), obj, lexicographicMode=False,
             )
             if err_ind or err_status or not var_binds:
