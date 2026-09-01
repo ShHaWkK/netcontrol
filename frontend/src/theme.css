@@ -199,6 +199,7 @@ select,input[type=text],input[type=search]{
 .dev b{font-size:13px}
 .dev .pill{margin-left:auto}
 .dev .metrics{font-size:11.5px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.dev-spark{position:absolute;right:10px;bottom:9px;opacity:.75;pointer-events:none}
 .wan-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--hairline);font-variant-numeric:tabular-nums}
 .wan-row:last-child{border-bottom:none}
 .wan-row b{font-size:13px;min-width:120px}

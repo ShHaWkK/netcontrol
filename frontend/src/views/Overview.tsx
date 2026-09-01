@@ -202,12 +202,13 @@ export default function Overview() {
                 <div className="dev-grid">
                   {snap.devices.filter((d) => d.grp === g).map((d) => {
                     const [cls, label] = ST_META[d.st]
-                    const isLive = snap.switches.some((s) => s.name === d.name && s.live)
+                    const liveSwitch = snap.switches.find((s) => s.name === d.name && s.live)
+                    const cpuTrend = liveSwitch?.history.cpu.filter((v): v is number => v !== null) ?? []
                     return (
-                      <div className={`dev ${d.st}`} key={d.name}>
+                      <div className={`dev ${d.st}`} key={d.name} style={{ position: 'relative' }}>
                         <div className="top">
                           <b>{d.name}</b>
-                          {isLive
+                          {liveSwitch
                             ? <span className="pill live" style={{ marginLeft: 'auto' }}>● LIVE</span>
                             : <span className="pill mute" style={{ marginLeft: 'auto' }} title="Simulated — no real monitoring source wired for this device yet">SIM</span>}
                         </div>
@@ -216,6 +217,11 @@ export default function Overview() {
                           <span>{d.metric}</span>
                           <span className={`pill ${cls}`}>{label}</span>
                         </div>
+                        {cpuTrend.length >= 2 && (
+                          <div className="dev-spark" title="CPU trend">
+                            <Sparkline data={cpuTrend.slice(-30)} w={64} h={20} color={wanColors[0]} />
+                          </div>
+                        )}
                       </div>
                     )
                   })}

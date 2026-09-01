@@ -84,9 +84,6 @@ class SwitchGateway:
     _cache_at: float = field(default=0.0, init=False, repr=False)
     _name: Optional[str] = field(default=None, init=False, repr=False)
     _vlans: list[Vlan] = field(default_factory=list, init=False, repr=False)
-    # Historique en mémoire — perdu au redémarrage du conteneur, mais 100%
-    # réel (jamais de valeur inventée pour combler un trou). Plafonné pour
-    # ne pas grossir indéfiniment (≈ switch_poll_seconds × 240 points).
     _history: "deque[dict]" = field(default_factory=lambda: deque(maxlen=240), init=False, repr=False)
 
     def _device(self) -> dict:
@@ -104,7 +101,7 @@ class SwitchGateway:
         try:
             self.read_switch()
             return True
-        except Exception as e:  # noqa: BLE001 — on ne veut jamais planter le démarrage
+        except Exception as e:  
             logger.warning("Switch %s injoignable, retombe en simulation: %s", self.host, e)
             return False
 
@@ -260,9 +257,8 @@ class SwitchGateway:
         self._cache = None  # force une relecture au prochain poll
         return preview
 
-    # ── Gestion des VLANs — création uniquement (pas de suppression pour
-    # l'instant : effacer un VLAN encore assigné à des ports coupe le trafic
-    # dessus, trop dangereux pour une action en un clic) ─────────────────
+    # ── Gestion des VLANs — création uniquement 
+    
     def build_vlan_cli(self, vlan_id: int, name: str) -> CliPreview:
         safe_name = "".join(c for c in name if c.isalnum() or c == "_")[:32] or f"VLAN{vlan_id}"
         lines = [
