@@ -59,6 +59,20 @@ class SfpPort(BaseModel):
     protected: bool = True
 
 
+class Vlan(BaseModel):
+    id: int
+    name: str
+
+
+class SwitchHistory(BaseModel):
+    """Séries temporelles réelles (jamais simulées) — un point par lecture
+    effective du switch. Vide tant qu'il n'y a pas eu au moins 2 lectures."""
+    t: list[str] = []
+    cpu: list[Optional[int]] = []
+    temp: list[Optional[int]] = []
+    poe: list[float] = []
+
+
 class Switch(BaseModel):
     name: str
     model: str
@@ -70,6 +84,8 @@ class Switch(BaseModel):
     cpu_pct: Optional[int] = None
     temp_c: Optional[int] = None
     uptime: Optional[str] = None
+    vlans: list[Vlan] = []  # VLANs propres à CE switch — jamais fusionnés avec un autre
+    history: SwitchHistory = SwitchHistory()
 
 
 class Alert(BaseModel):
@@ -147,11 +163,6 @@ class Snapshot(BaseModel):
     ssid_history: SsidHistory
 
 
-class Vlan(BaseModel):
-    id: int
-    name: str
-
-
 class PortProfile(BaseModel):
     name: str
     vlan: int
@@ -163,6 +174,11 @@ class PortConfigRequest(BaseModel):
     action: Literal["config", "poe", "shut", "noshut"]
     vlan: Optional[int] = None
     desc: Optional[str] = None
+
+
+class VlanCreateRequest(BaseModel):
+    id: int
+    name: str
 
 
 class CliPreview(BaseModel):

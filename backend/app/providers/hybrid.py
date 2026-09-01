@@ -10,7 +10,7 @@ import logging
 from typing import Awaitable, Callable, Optional
 
 from ..config import settings
-from ..models import Alert, Ap, CliPreview, Device, LogEntry, PortConfigRequest, Snapshot, Vlan
+from ..models import Alert, Ap, CliPreview, Device, LogEntry, PortConfigRequest, Snapshot, SwitchHistory, Vlan
 from .base import DataProvider
 from .inventory import SwitchEntry, ZabbixConfig, load_inventory, load_zabbix, save_zabbix
 from .inventory import clear_zabbix as inventory_clear_zabbix
@@ -197,6 +197,8 @@ class HybridProvider(DataProvider):
         # aucun switch connecté = liste vide (voir empty-state frontend),
         # jamais de faux appareil affiché à la place.
         real = [gw.cached_or_read(settings.switch_poll_seconds * 2) for gw in self._live.values()]
+        for sw, gw in zip(real, self._live.values()):
+            sw.history = SwitchHistory(**gw.history_series())
         snap.switches = real
         snap.kpis.poe_watts = round(sum(p.poe for sw in real for p in sw.ports))
         snap.devices = [
@@ -231,13 +233,10 @@ class HybridProvider(DataProvider):
         return snap
 
     def get_vlans(self) -> list[Vlan]:
-        if self._live:
-            merged: dict[int, Vlan] = {}
-            for gw in self._live.values():
-                for v in gw._vlans:
-                    merged[v.id] = v
-            if merged:
-                return sorted(merged.values(), key=lambda v: v.id)
+        # /api/meta est un endpoint global (pas par switch) — les VLANs réels
+        # vivent maintenant sur chaque Switch.vlans (voir snapshot()), jamais
+        # fusionnés entre switchs. Ceci ne sert plus que de valeur par défaut
+        # avant sélection d'un switch précis dans Switch Manager.
         return self._sim.get_vlans()
 
     # ── Tout ce qui n'a pas de source réelle → simulation ─────────────
@@ -291,6 +290,24 @@ class HybridProvider(DataProvider):
         if port.protected:
             raise PermissionError(port.id)
         result = gw.apply(port, req, PROFILES)
+        self._sim.push_log("audit", "info", "NetControl",
+                            f"AUDIT {settings.operator} — {result.summary} ({gw._name}) [LIVE]")
+        return result
+
+    # ── Création de VLAN — uniquement sur un switch réel identifié ────
+    def preview_vlan(self, switch_name: str, vlan_id: int, name: str) -> CliPreview:
+        gw = self._gateway_for(switch_name)
+        if gw is None:
+            raise KeyError(switch_name)
+        return gw.build_vlan_cli(vlan_id, name)
+
+    def apply_vlan(self, switch_name: str, vlan_id: int, name: str) -> CliPreview:
+        gw = self._gateway_for(switch_name)
+        if gw is None:
+            raise KeyError(switch_name)
+        if not settings.switch_write_enabled:
+            raise PermissionError("Écriture désactivée (NETCONTROL_SWITCH_WRITE_ENABLED=false)")
+        result = gw.apply_vlan(vlan_id, name)
         self._sim.push_log("audit", "info", "NetControl",
                             f"AUDIT {settings.operator} — {result.summary} ({gw._name}) [LIVE]")
         return result

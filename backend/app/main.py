@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .models import PortConfigRequest, PositionUpdate
+from .models import PortConfigRequest, PositionUpdate, VlanCreateRequest
 from .providers.hybrid import HybridProvider
 from .providers.inventory import SwitchEntry, ZabbixConfig
 from .providers.simulation import PROFILES
@@ -154,6 +154,31 @@ async def apply_port(switch_name: str, port_n: int, req: PortConfigRequest):
     except PermissionError as e:
         raise HTTPException(403, f"Port is protected (read-only): {e}")
     except Exception as e:  # noqa: BLE001 — ex. timeout SSH, auth refusée, config rejetée
+        raise HTTPException(502, f"Push to switch failed, nothing applied: {e}")
+    await manager.broadcast_snapshot()
+    return result
+
+
+@app.post("/api/switches/{switch_name}/vlans/preview")
+def preview_vlan(switch_name: str, req: VlanCreateRequest):
+    try:
+        return provider.preview_vlan(switch_name, req.id, req.name)
+    except KeyError:
+        raise HTTPException(404, f"Unknown or non-live switch: {switch_name}")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Switch error: {e}")
+
+
+@app.post("/api/switches/{switch_name}/vlans/apply")
+async def apply_vlan(switch_name: str, req: VlanCreateRequest):
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, provider.apply_vlan, switch_name, req.id, req.name)
+    except KeyError:
+        raise HTTPException(404, f"Unknown or non-live switch: {switch_name}")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Push to switch failed, nothing applied: {e}")
     await manager.broadcast_snapshot()
     return result

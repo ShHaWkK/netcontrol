@@ -52,6 +52,13 @@ export interface SfpPort {
   protected: boolean
 }
 
+export interface SwitchHistory {
+  t: string[]
+  cpu: (number | null)[]
+  temp: (number | null)[]
+  poe: number[]
+}
+
 export interface Switch {
   name: string
   model: string
@@ -60,6 +67,8 @@ export interface Switch {
   ports: Port[]
   sfp: SfpPort[]
   live: boolean
+  vlans: Vlan[]
+  history: SwitchHistory
 }
 
 export interface Alert {

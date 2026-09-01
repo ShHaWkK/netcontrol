@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import MetricChart from '../components/MetricChart'
 import { consumePendingSelection } from '../nav'
 import { useSnapshot, useStore } from '../store'
 import { showToast } from '../toast'
@@ -27,6 +28,13 @@ export default function SwitchManager() {
   const [preview, setPreview] = useState<{ cli: CliPreview; req: PortConfigRequest } | null>(null)
   const [applying, setApplying] = useState(false)
 
+  // Création de VLAN — formulaire ouvert pour au plus un switch à la fois
+  const [addVlanFor, setAddVlanFor] = useState<string | null>(null)
+  const [newVlanId, setNewVlanId] = useState('')
+  const [newVlanName, setNewVlanName] = useState('')
+  const [vlanPreview, setVlanPreview] = useState<{ cli: CliPreview; swName: string; id: number; name: string } | null>(null)
+  const [vlanApplying, setVlanApplying] = useState(false)
+
   // arrivée depuis "Fix in Switch Manager" sur la Heatmap : pré-sélectionne
   // le port concerné dès le montage, pour résoudre l'incident en un clic.
   useEffect(() => {
@@ -37,11 +45,11 @@ export default function SwitchManager() {
   const sw = sel ? snap.switches.find((s) => s.name === sel.swName) : null
   const port: Port | null = sel && sw && sel.n > 0 ? sw.ports[sel.n - 1] : null
   const sfp: SfpPort | null = sel && sw && sel.n < 0 ? sw.sfp[-sel.n - 1] : null
-  // /api/meta reflète le(s) switch(s) live — mais un switch simulé (ex. la
-  // démo SW-EDGE-01) doit garder SES propres VLANs, pas ceux d'un vrai
-  // switch sans rapport connecté à côté. On ne prend les VLANs réels que
-  // pour un switch effectivement live.
-  const VLANS = sw?.live ? (meta?.vlans ?? SIM_VLANS) : SIM_VLANS
+  // Chaque switch réel porte SES PROPRES VLANs (sw.vlans, lus sur ce switch
+  // précis) — jamais de liste globale partagée entre switchs, sinon les
+  // VLANs d'un switch s'affichent (et s'écrasent en cas de collision d'ID)
+  // sur un autre.
+  const VLANS = sw?.live ? sw.vlans : SIM_VLANS
   // Les profils rapides (mapping VLAN "Access point"/"Printer"...) sont
   // propres au scénario Dakar simulé : sans objet sur un switch réel arbitraire.
   const PROFILES = sw?.live ? [] : (meta?.profiles ?? SIM_PROFILES)
@@ -87,6 +95,34 @@ export default function SwitchManager() {
       .finally(() => setApplying(false))
   }
 
+  const previewNewVlan = (swName: string) => {
+    const id = parseInt(newVlanId, 10)
+    if (!id || id < 1 || id > 4094 || !newVlanName.trim()) {
+      showToast('Invalid VLAN', 'ID must be 1-4094 and name cannot be empty', 'error')
+      return
+    }
+    api
+      .previewVlan(swName, id, newVlanName.trim())
+      .then((cli) => setVlanPreview({ cli, swName, id, name: newVlanName.trim() }))
+      .catch((e) => showToast('Preview failed', e.message, 'error'))
+  }
+
+  const applyNewVlan = () => {
+    if (!vlanPreview) return
+    setVlanApplying(true)
+    api
+      .applyVlan(vlanPreview.swName, vlanPreview.id, vlanPreview.name)
+      .then((cli) => {
+        showToast('VLAN created on the real switch', `${cli.summary} — ${vlanPreview.swName}`, 'success')
+        setVlanPreview(null)
+        setAddVlanFor(null)
+        setNewVlanId('')
+        setNewVlanName('')
+      })
+      .catch((e) => showToast('VLAN creation failed — nothing changed', e.message, 'error'))
+      .finally(() => setVlanApplying(false))
+  }
+
   // la modale se ferme à Échap, comme attendu d'un dialogue
   useEffect(() => {
     if (!preview) return
@@ -125,7 +161,29 @@ export default function SwitchManager() {
           <span className="sub">{s.model} · {s.ip} · {s.loc}</span>
           <span className="pill ok" style={{ marginLeft: 'auto' }}>● {up} ports up</span>
           <span className="pill mute">PoE {poe} W / 720 W</span>
+          {s.live && (
+            <button
+              className="btn ghost"
+              style={{ padding: '2px 9px', fontSize: 11.5 }}
+              onClick={() => setAddVlanFor(addVlanFor === s.name ? null : s.name)}
+            >
+              {addVlanFor === s.name ? 'Cancel' : '+ VLAN'}
+            </button>
+          )}
         </div>
+        {addVlanFor === s.name && (
+          <div className="fp-body" style={{ background: 'var(--accent-soft)', borderRadius: 6, marginBottom: 10 }}>
+            <input
+              type="number" min={1} max={4094} placeholder="VLAN ID (e.g. 40)"
+              style={{ width: 140 }} value={newVlanId} onChange={(e) => setNewVlanId(e.target.value)}
+            />
+            <input
+              type="text" placeholder="Name (e.g. GUEST_WIFI)"
+              style={{ width: 200 }} value={newVlanName} onChange={(e) => setNewVlanName(e.target.value)}
+            />
+            <button className="btn primary" onClick={() => previewNewVlan(s.name)}>Preview</button>
+          </div>
+        )}
         <div className="fp-body">
           <div className="fp-ports">{cells}</div>
           <div className="fp-sfp">
@@ -145,6 +203,22 @@ export default function SwitchManager() {
             })}
           </div>
         </div>
+        {s.live && s.history.t.length >= 2 && (
+          <div className="metric-grid">
+            <div>
+              <div className="nav-label" style={{ padding: '10px 0 4px' }}>CPU</div>
+              <MetricChart t={s.history.t} values={s.history.cpu} unit="%" color="var(--s1)" min={0} max={100} />
+            </div>
+            <div>
+              <div className="nav-label" style={{ padding: '10px 0 4px' }}>Temperature</div>
+              <MetricChart t={s.history.t} values={s.history.temp} unit="°C" color="var(--s2)" />
+            </div>
+            <div>
+              <div className="nav-label" style={{ padding: '10px 0 4px' }}>PoE draw</div>
+              <MetricChart t={s.history.t} values={s.history.poe} unit=" W" color="var(--s3)" min={0} />
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -328,6 +402,41 @@ export default function SwitchManager() {
                 {applying
                   ? (sw?.live ? 'Pushing to switch…' : 'Applying…')
                   : `Apply${sw?.live ? ' — real switch' : ' (simulation)'}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {vlanPreview && (
+        <div
+          className="modal-bg"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => e.target === e.currentTarget && setVlanPreview(null)}
+        >
+          <div className="modal">
+            <div className="card-h">
+              <b>Create VLAN — command preview</b>
+              <span className="sub">{vlanPreview.cli.target} · {vlanPreview.cli.ip}</span>
+            </div>
+            <div className="card-b">
+              <pre className="cli">
+                {vlanPreview.cli.lines.map((line, i) => {
+                  const cls = cliLineClass(line)
+                  return (
+                    <span key={i}>
+                      {cls ? <span className={cls}>{line}</span> : line}
+                      {'\n'}
+                    </span>
+                  )
+                })}
+              </pre>
+            </div>
+            <div className="modal-foot">
+              <button className="btn ghost" onClick={() => setVlanPreview(null)} disabled={vlanApplying}>Cancel</button>
+              <button className="btn primary live" autoFocus disabled={vlanApplying} onClick={applyNewVlan}>
+                {vlanApplying ? 'Pushing to switch…' : 'Apply — real switch'}
               </button>
             </div>
           </div>

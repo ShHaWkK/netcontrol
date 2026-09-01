@@ -15,7 +15,9 @@ sont ignorées pour l'instant — hors périmètre de la maquette validée.
 import logging
 import re
 import time
+from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 from ..models import CliPreview, Port, PortConfigRequest, PortProfile, SfpPort, Switch, Vlan
@@ -82,6 +84,10 @@ class SwitchGateway:
     _cache_at: float = field(default=0.0, init=False, repr=False)
     _name: Optional[str] = field(default=None, init=False, repr=False)
     _vlans: list[Vlan] = field(default_factory=list, init=False, repr=False)
+    # Historique en mémoire — perdu au redémarrage du conteneur, mais 100%
+    # réel (jamais de valeur inventée pour combler un trou). Plafonné pour
+    # ne pas grossir indéfiniment (≈ switch_poll_seconds × 240 points).
+    _history: "deque[dict]" = field(default_factory=lambda: deque(maxlen=240), init=False, repr=False)
 
     def _device(self) -> dict:
         return {
@@ -121,12 +127,28 @@ class SwitchGateway:
         self._vlans = _parse_vlans(vlan_out)
         self._cache = switch
         self._cache_at = time.monotonic()
+        self._history.append({
+            "t": datetime.now().isoformat(timespec="seconds"),
+            "cpu": switch.cpu_pct,
+            "temp": switch.temp_c,
+            "poe": round(sum(p.poe for p in switch.ports), 1),
+        })
         return switch
 
     def cached_or_read(self, max_age: float) -> Switch:
         if self._cache is not None and (time.monotonic() - self._cache_at) < max_age:
             return self._cache
         return self.read_switch()
+
+    def history_series(self) -> dict:
+        """Séries parallèles pour les graphiques — chaque point vient d'une
+        lecture réelle du switch, aucun trou comblé artificiellement."""
+        return {
+            "t": [h["t"] for h in self._history],
+            "cpu": [h["cpu"] for h in self._history],
+            "temp": [h["temp"] for h in self._history],
+            "poe": [h["poe"] for h in self._history],
+        }
 
     def _build_switch(
         self, status_out: str, err_out: str, vlan_out: str,
@@ -182,6 +204,7 @@ class SwitchGateway:
             cpu_pct=_parse_cpu(cpu_out),
             temp_c=_parse_temp(env_out),
             uptime=_parse_uptime(version_out),
+            vlans=_parse_vlans(vlan_out),  # propres à CE switch, jamais fusionnés
         )
 
     # ── Switch Manager — preview (jamais d'écriture) ─────────────────
@@ -235,6 +258,38 @@ class SwitchGateway:
             conn.save_config()
 
         self._cache = None  # force une relecture au prochain poll
+        return preview
+
+    # ── Gestion des VLANs — création uniquement (pas de suppression pour
+    # l'instant : effacer un VLAN encore assigné à des ports coupe le trafic
+    # dessus, trop dangereux pour une action en un clic) ─────────────────
+    def build_vlan_cli(self, vlan_id: int, name: str) -> CliPreview:
+        safe_name = "".join(c for c in name if c.isalnum() or c == "_")[:32] or f"VLAN{vlan_id}"
+        lines = [
+            f"! NetControl — LIVE target: {self._name or self.host} ({self.host})",
+            "configure terminal",
+            f"vlan {vlan_id}",
+            f" name {safe_name}",
+            "end",
+            "write memory",
+        ]
+        return CliPreview(
+            target=self._name or self.host, ip=self.host,
+            summary=f"Create VLAN {vlan_id} — “{safe_name}”", lines=lines,
+        )
+
+    def apply_vlan(self, vlan_id: int, name: str) -> CliPreview:
+        from netmiko import ConnectHandler
+
+        preview = self.build_vlan_cli(vlan_id, name)
+        commands = [l for l in preview.lines if not l.startswith("!") and l not in ("configure terminal", "end", "write memory")]
+
+        with ConnectHandler(**self._device()) as conn:
+            conn.enable()
+            conn.send_config_set(commands)
+            conn.save_config()
+
+        self._cache = None
         return preview
 
 

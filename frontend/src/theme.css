@@ -297,6 +297,7 @@ select,input[type=text],input[type=search]{
 .fp-legend i.up{background:var(--good-bg);border-color:var(--good)}
 .fp-legend i.err{background:var(--crit-bg);border-color:var(--critical)}
 .fp-legend i.prot{background:var(--accent-soft);border-color:var(--accent)}
+.metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:14px;padding-top:14px;border-top:1px solid var(--hairline)}
 
 .port-panel .card-b{display:flex;flex-direction:column;gap:13px}
 .pp-empty{color:var(--muted);font-size:13px;text-align:center;padding:34px 10px}

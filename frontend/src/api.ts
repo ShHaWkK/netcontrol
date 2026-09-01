@@ -29,6 +29,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(req),
     }),
+  previewVlan: (sw: string, id: number, name: string) =>
+    request<CliPreview>(`/api/switches/${encodeURIComponent(sw)}/vlans/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ id, name }),
+    }),
+  applyVlan: (sw: string, id: number, name: string) =>
+    request<CliPreview>(`/api/switches/${encodeURIComponent(sw)}/vlans/apply`, {
+      method: 'POST',
+      body: JSON.stringify({ id, name }),
+    }),
   listSwitches: () => request<SwitchInventoryEntry[]>('/api/admin/switches'),
   addSwitch: (entry: {
     host: string
