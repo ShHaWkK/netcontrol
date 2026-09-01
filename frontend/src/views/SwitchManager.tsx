@@ -165,6 +165,17 @@ export default function SwitchManager() {
         <p>Port provisioning without SSH — preview before applying</p>
       </div>
 
+      {snap.switches.length === 0 ? (
+        <div className="card">
+          <div className="card-b">
+            <div className="pp-empty no-source" style={{ padding: '48px 20px' }}>
+              <b>No switch connected.</b>
+              <br />
+              Add one from the <b>Admin</b> tab — it connects immediately, no restart needed.
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="sw-layout">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="card faceplate">
@@ -284,6 +295,7 @@ export default function SwitchManager() {
           </div>
         </div>
       </div>
+      )}
 
       {preview && (
         <div

@@ -34,14 +34,18 @@ class ZabbixGateway:
     password: Optional[str] = None
 
     _client: httpx.Client = field(init=False, repr=False)
+    _endpoint: str = field(init=False, repr=False)
     _auth_token: Optional[str] = field(default=None, init=False, repr=False)
     _cache: list[Alert] = field(default_factory=list, init=False, repr=False)
     _cache_at: float = field(default=0.0, init=False, repr=False)
     _id: int = field(default=0, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        endpoint = self.url.rstrip("/") + "/api_jsonrpc.php"
-        self._client = httpx.Client(base_url=endpoint, timeout=8.0)
+        # Pas de base_url + chemin relatif "" : httpx joint ça en ajoutant un
+        # "/" final (.../api_jsonrpc.php/), que Zabbix/nginx renvoie en 404.
+        # On poste toujours l'URL complète et exacte, sans ambiguïté.
+        self._endpoint = self.url.rstrip("/") + "/api_jsonrpc.php"
+        self._client = httpx.Client(timeout=8.0)
 
     def _call(self, method: str, params: dict) -> dict:
         self._id += 1
@@ -50,7 +54,7 @@ class ZabbixGateway:
         auth = self.token or self._auth_token
         if auth and method != "apiinfo.version":
             headers["Authorization"] = f"Bearer {auth}"
-        res = self._client.post("", json=payload, headers=headers)
+        res = self._client.post(self._endpoint, json=payload, headers=headers)
         res.raise_for_status()
         body = res.json()
         if "error" in body:
@@ -76,7 +80,6 @@ class ZabbixGateway:
         self._ensure_auth()
         problems = self._call("problem.get", {
             "output": ["eventid", "name", "severity", "clock", "acknowledged"],
-            "selectHosts": ["host"],
             "recent": True,
             "sortfield": ["eventid"],
             "sortorder": "DESC",

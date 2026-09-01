@@ -53,6 +53,17 @@ export default function Topology() {
         <p>Switch interconnections — inferred from real port/uplink descriptions</p>
       </div>
 
+      {snap.switches.length === 0 && (
+        <div className="card">
+          <div className="card-b">
+            <div className="pp-empty no-source" style={{ padding: '48px 20px' }}>
+              <b>No switch connected.</b>
+              <br />
+              Add one from the <b>Admin</b> tab to see its interconnections here.
+            </div>
+          </div>
+        </div>
+      )}
       <div className="topo-grid">
         {snap.switches.map((sw) => {
           const links = linksFor(sw, names.filter((n) => n !== sw.name))

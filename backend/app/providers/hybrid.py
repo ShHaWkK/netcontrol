@@ -190,34 +190,33 @@ class HybridProvider(DataProvider):
     # ── Composition du snapshot ───────────────────────────────────────
     def snapshot(self) -> Snapshot:
         snap = self._sim.snapshot()
-        if self._live:
-            # union, pas remplacement : les switchs simulés restants (ex.
-            # SW-EDGE-01, qui porte le scénario de démo AP-MR2-01) doivent
-            # rester visibles — sinon des fonctionnalités qui en dépendent
-            # (raccourci "Fix" sur la heatmap) se cassent silencieusement
-            # dès qu'un vrai switch est connecté. Chaque switch garde son
-            # indicateur live/simulé, donc rien n'est présenté comme faux.
-            real = [gw.cached_or_read(settings.switch_poll_seconds * 2) for gw in self._live.values()]
-            real_names = {s.name for s in real}
-            snap.switches = real + [s for s in snap.switches if s.name not in real_names]
 
-            # PoE et carte "Devices" recalculés sur le vrai matériel : sinon
-            # ces widgets de l'Overview restent invisiblement faux alors que
-            # le switch est connecté pour de vrai.
-            snap.kpis.poe_watts = round(sum(p.poe for sw in snap.switches for p in sw.ports))
-            snap.devices = [d for d in snap.devices if d.name not in real_names] + [
-                Device(
-                    grp="Network core", name=sw.name,
-                    kind=f"{sw.model} · live",
-                    st="warn" if (sw.cpu_pct or 0) >= 80 or (sw.temp_c or 0) >= 70 else "ok",
-                    metric=(
-                        f"CPU {sw.cpu_pct}%" if sw.cpu_pct is not None else "CPU n/a"
-                    ) + " · " + (
-                        f"{sw.temp_c}°C" if sw.temp_c is not None else "temp n/a"
-                    ) + (f" · up {sw.uptime}" if sw.uptime else ""),
-                )
-                for sw in real
-            ]
+        # Aucune simulation affichée nulle part : les switchs (SW-CORE-01,
+        # SW-EDGE-01) et les devices de la maquette Dakar sont entièrement
+        # retirés — pas masqués, retirés. Seul le matériel réel apparaît ;
+        # aucun switch connecté = liste vide (voir empty-state frontend),
+        # jamais de faux appareil affiché à la place.
+        real = [gw.cached_or_read(settings.switch_poll_seconds * 2) for gw in self._live.values()]
+        snap.switches = real
+        snap.kpis.poe_watts = round(sum(p.poe for sw in real for p in sw.ports))
+        snap.devices = [
+            Device(
+                grp="Network core", name=sw.name,
+                kind=f"{sw.model} · live",
+                st="warn" if (sw.cpu_pct or 0) >= 80 or (sw.temp_c or 0) >= 70 else "ok",
+                metric=(
+                    f"CPU {sw.cpu_pct}%" if sw.cpu_pct is not None else "CPU n/a"
+                ) + " · " + (
+                    f"{sw.temp_c}°C" if sw.temp_c is not None else "temp n/a"
+                ) + (f" · up {sw.uptime}" if sw.uptime else ""),
+            )
+            for sw in real
+        ]
+        # Logs : ne garder que l'audit réel (actions effectivement appliquées
+        # via NetControl) — le syslog/alerte "de démo" seedé au démarrage
+        # de SimulationProvider n'est jamais montré.
+        snap.logs = [l for l in snap.logs if l.type == "audit"]
+
         if self._zabbix_live and self._zabbix:
             alerts = self._zabbix.cached_or_read(settings.zabbix_poll_seconds * 2)
             snap.alerts = alerts
@@ -266,13 +265,17 @@ class HybridProvider(DataProvider):
         return self._sim.ack_alert(alert_id)
 
     def get_logs(self, type_=None, sev=None, query=None, limit=120) -> list[LogEntry]:
-        return self._sim.get_logs(type_=type_, sev=sev, query=query, limit=limit)
+        # Seul le type "audit" est réel (actions appliquées via NetControl) —
+        # syslog/alerte de la maquette simulée ne sont jamais montrés, quel
+        # que soit le filtre demandé côté UI.
+        logs = self._sim.get_logs(type_="audit", sev=sev, query=query, limit=limit)
+        return [l for l in logs if l.type == "audit"]
 
-    # ── Switch Manager — routé vers le réel si le switch est live ────
+    # ── Switch Manager — uniquement du réel, plus de repli simulé ────
     def preview_port_config(self, switch_name: str, port_n: int, req: PortConfigRequest) -> CliPreview:
         gw = self._gateway_for(switch_name)
         if gw is None:
-            return self._sim.preview_port_config(switch_name, port_n, req)
+            raise KeyError(switch_name)
         port = gw.cached_or_read(settings.switch_poll_seconds * 2).ports[port_n - 1]
         if port.protected:
             raise PermissionError(port.id)
@@ -281,7 +284,7 @@ class HybridProvider(DataProvider):
     def apply_port_config(self, switch_name: str, port_n: int, req: PortConfigRequest) -> CliPreview:
         gw = self._gateway_for(switch_name)
         if gw is None:
-            return self._sim.apply_port_config(switch_name, port_n, req)
+            raise KeyError(switch_name)
         if not settings.switch_write_enabled:
             raise PermissionError("Écriture désactivée (NETCONTROL_SWITCH_WRITE_ENABLED=false)")
         port = gw.cached_or_read(settings.switch_poll_seconds * 2).ports[port_n - 1]

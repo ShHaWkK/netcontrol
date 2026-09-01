@@ -12,7 +12,6 @@ const SEV_PILL: Record<Severity, JSX.Element> = {
 
 export default function Logs() {
   const snap = useSnapshot()
-  const [type, setType] = useState('all')
   const [sev, setSev] = useState('all')
   const [search, setSearch] = useState('')
   const seenRef = useRef<Set<number>>(new Set())
@@ -30,7 +29,6 @@ export default function Logs() {
   const q = search.toLowerCase()
   const rows = snap.logs.filter(
     (l) =>
-      (type === 'all' || l.type === type) &&
       (sev === 'all' || l.sev === sev) &&
       (!q || `${l.src} ${l.msg}`.toLowerCase().includes(q)),
   )
@@ -39,14 +37,8 @@ export default function Logs() {
     <section>
       <div className="view-head">
         <h1>Logs</h1>
-        <p>Device syslog · alerts · NetControl audit trail</p>
+        <p>NetControl audit trail — real actions only, no simulated syslog</p>
         <div className="tools log-filters">
-          <select aria-label="Type" value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="all">All types</option>
-            <option value="syslog">Syslog</option>
-            <option value="alerte">Alerts</option>
-            <option value="audit">Audit</option>
-          </select>
           <select aria-label="Severity" value={sev} onChange={(e) => setSev(e.target.value)}>
             <option value="all">All severities</option>
             <option value="critical">Critical</option>
@@ -70,7 +62,9 @@ export default function Logs() {
             {rows.length === 0 && (
               <tr>
                 <td style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>
-                  No entries match the current filters.
+                  {snap.logs.length === 0
+                    ? 'No audit entries yet — every real config change applied via Switch Manager will appear here.'
+                    : 'No entries match the current filters.'}
                 </td>
               </tr>
             )}
